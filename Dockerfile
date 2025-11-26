@@ -33,7 +33,7 @@ COPY requirements.txt .
 # ---------------------------------------------------------
 # Now install the rest
 # ---------------------------------------------------------
-RUN pip install -r requirements.txt
+RUN pip install --no-build-isolation -r requirements.txt
 
 # ---------------------------------------------------------
 # Copy your code
