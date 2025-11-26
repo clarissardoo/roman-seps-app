@@ -2,6 +2,7 @@ services:
   - type: web
     name: planet-seps-app
     env: python
+    pythonVersion: 3.10.14
     plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn app:app"
