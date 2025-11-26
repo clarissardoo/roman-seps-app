@@ -1,9 +1,6 @@
 services:
   - type: web
     name: planet-seps-app
-    env: python
-    pythonVersion: 3.10.14
+    env: docker
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn app:app"
-
+    dockerfilePath: ./Dockerfile
