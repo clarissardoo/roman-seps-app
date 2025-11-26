@@ -1,17 +1,16 @@
 # ---------------------------------------------------------
-# Use a stable Python version that supports NumPy/Astropy
+# Use Python version compatible with NumPy/Astropy
 # ---------------------------------------------------------
 FROM python:3.12.11-slim
 
 # ---------------------------------------------------------
-# System dependencies (needed for numpy, scipy, astropy)
+# System dependencies (needed for numpy, scipy, astropy, radvel, orbitize)
 # ---------------------------------------------------------
 RUN apt-get update && apt-get install -y \
     build-essential \
     gfortran \
     libopenblas-dev \
     liblapack-dev \
-    libatlas-base-dev \
     git \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,7 +20,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # ---------------------------------------------------------
-# Copy dependency list first (for better caching)
+# Copy dependency list first (for caching)
 # ---------------------------------------------------------
 COPY requirements.txt .
 
@@ -37,12 +36,7 @@ RUN pip install --upgrade pip setuptools wheel \
 COPY . .
 
 # ---------------------------------------------------------
-# Render automatically injects the $PORT env variable
-# We do not need EXPOSE in Dockerfile for Render deployments.
-# ---------------------------------------------------------
-
-# ---------------------------------------------------------
-# Command to start Flask app with Gunicorn
-# Binds to 0.0.0.0 and uses the dynamic $PORT provided by Render
+# Start Flask app with Gunicorn
+# Render provides $PORT automatically.
 # ---------------------------------------------------------
 CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "app:app"]
