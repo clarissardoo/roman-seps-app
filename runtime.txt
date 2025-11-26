@@ -1,5 +1,2 @@
-<<<<<<< Updated upstream
-3.12.11
-=======
 python-3.12.11
->>>>>>> Stashed changes
+
