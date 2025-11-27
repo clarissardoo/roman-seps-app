@@ -357,4 +357,4 @@ def index():
     )
 
 if __name__ == "__main__":
-    app.run()
+    app.run(host=os.getenv('HOST'), port=int(os.getenv('PORT'),8080), debug=False)
