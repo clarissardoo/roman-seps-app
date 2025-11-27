@@ -9,7 +9,11 @@ RUN apt-get update && apt-get install -y \
     libopenblas-dev \
     liblapack-dev \
     git \
+    git-lfs \
     && rm -rf /var/lib/apt/lists/*
+
+# Initialize Git LFS
+RUN git lfs install
 
 WORKDIR /app
 
@@ -24,7 +28,6 @@ RUN pip install numpy
 # Install cython (orbitize & radvel need this to compile extensions)
 RUN pip install cython
 
-
 # ---------------------------------------------------------
 # Copy dependency list
 # ---------------------------------------------------------
@@ -36,9 +39,12 @@ COPY requirements.txt .
 RUN pip install --no-build-isolation -r requirements.txt
 
 # ---------------------------------------------------------
-# Copy your code
+# Copy code
 # ---------------------------------------------------------
 COPY . .
+
+# Pull LFS files after copying
+RUN git lfs pull || true
 
 EXPOSE 10000
 CMD gunicorn --bind 0.0.0.0:10000 app:app
