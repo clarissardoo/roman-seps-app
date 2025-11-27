@@ -27,5 +27,5 @@ RUN git clone https://github.com/clarissardoo/roman-seps-app.git /tmp/repo && \
     cp -r /tmp/repo/* /app/ && \
     rm -rf /tmp/repo/.git
 
-EXPOSE 10000
-CMD gunicorn --bind 0.0.0.0:10000 app:app
+EXPOSE 8080
+CMD gunicorn --bind 0.0.0.0:8080 app:app
