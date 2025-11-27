@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
+import os
 
 
 def compute_sep(
@@ -357,4 +358,5 @@ def index():
     )
 
 if __name__ == "__main__":
-    app.run(host=os.getenv('HOST'), port=int(os.getenv('PORT'),8080), debug=False)
+    app.run(host=os.getenv('HOST', '0.0.0.0'), port=int(os.getenv('PORT', 8080)), debug=False)
+    # app.run()
