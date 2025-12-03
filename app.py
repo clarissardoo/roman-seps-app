@@ -143,7 +143,7 @@ orbit_params = {
     "HD_160691": {
         "basis": "per tc secosw sesinw k",
         "m0": 1.13, "m0_err": 0.02,
-        "plx": 15.5981, "plx_err": 0.120162,
+        "plx": 64.082, "plx_err": 0.120162,
         "n_planets": 4, "pl_num": 4, "g_mag": 4.942752,
     },
     "HD_190360": {
