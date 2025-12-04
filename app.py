@@ -256,7 +256,7 @@ def index():
     lan_str = request.form.get("lan", "random").strip()
     nsamp_str = request.form.get("nsamp", "200").strip()
 
-    # parse all params
+    # Parse parameters
     try:
         nsamp = int(nsamp_str) if nsamp_str else 200
         override_inc = None if inc_str.lower() == "random" else float(inc_str)
@@ -306,7 +306,7 @@ def index():
     df_synth = myBasis.to_synth(df)
 
     # Build epoch sampling
-    epochs_sep = Time(np.linspace(t_start.mjd, t_end.mjd, 100), format="mjd")
+    epochs_sep = Time(np.linspace(t_start.mjd, t_end.mjd, 40), format="mjd")
     times_sep = epochs_sep.decimalyear
 
     epochs_2d = Time(np.linspace(t_start.mjd, t_end.mjd, 100), format="mjd")
@@ -350,12 +350,10 @@ def index():
 
     best_idx = int(df_synth["lnprobability"].idxmax())
 
-
-    # CREATE PLOT WITH PLASMA COLORMAP
     fig = plt.figure(figsize=(22, 8))
-    gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.5], width_ratios=[2, 1, 1], hspace=0.3, wspace=0.3)
+    gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.5], width_ratios=[1.5, 1, 1], hspace=0.3, wspace=0.3)
 
-    #plasma colormap colors - pulled this from matplotlib
+    # Get plasma colormap colors
     plasma_cmap = plt.cm.plasma
     color_iwa_narrow = plasma_cmap(0.85)  # bright yellow-orange
     color_iwa_wide = plasma_cmap(0.5)     # magenta-purple
@@ -369,7 +367,7 @@ def index():
     color_fill = plasma_cmap(0.2)         # dark purple for fill
     color_samples = plasma_cmap(0.15)     # very dark purple for sample lines
 
-    #PLOT 1: 2D ORBIT
+    # PLOT 1: 2D ORBIT
     ax1 = fig.add_subplot(gs[:, 0])
     title_2d = f"{planet}: Orbital Trajectory (i={'random' if override_inc is None else f'{override_inc}°'}"
     if override_lan is not None:
@@ -412,7 +410,7 @@ def index():
     ax1.set_aspect('equal')
     ax1.tick_params(axis='both', which='major', labelsize=12)
 
-    #PLOT 2: SEPARATION VS TIME
+    # PLOT 2: SEPARATION VS TIME
     ax2 = fig.add_subplot(gs[0, 1:])
     ax2.set_title("Separation vs Time", fontsize=14)
     ax2.set_ylabel("Separation [mas]", fontsize=14)
@@ -433,7 +431,7 @@ def index():
 
     ax2.legend(loc='best', fontsize=10)
 
-    #PLOT 3: VISIBILITY FRACTION
+    # PLOT 3: VISIBILITY FRACTION
     ax3 = fig.add_subplot(gs[1, 1:], sharex=ax2)
     ax3.set_title("Visibility Fraction", fontsize=14)
     ax3.set_xlabel("Year", fontsize=14)
@@ -451,7 +449,7 @@ def index():
     plt.suptitle(f"{planet}: {start_date_str} → {end_date_str}", fontsize=16, y=0.98)
     plt.tight_layout()
 
-
+    # Convert to base64
     buf = io.BytesIO()
     plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
     buf.seek(0)
