@@ -350,22 +350,25 @@ def index():
 
     best_idx = int(df_synth["lnprobability"].idxmax())
 
+    # =========================================
+    # CREATE PLOT WITH PLASMA COLORS
+    # =========================================
     fig = plt.figure(figsize=(22, 8))
     gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.5], width_ratios=[1.5, 1, 1], hspace=0.3, wspace=0.3)
 
-    # Get plasma colormap colors
-    plasma_cmap = plt.cm.plasma
-    color_iwa_narrow = plasma_cmap(0.85)  # bright yellow-orange
-    color_iwa_wide = plasma_cmap(0.5)     # magenta-purple
-    color_orbit_light = plasma_cmap(0.2)  # dark purple, lighter alpha
-    color_orbit_best = plasma_cmap(0.95)  # bright yellow
-    color_timestamp = plasma_cmap(0.0)    # dark purple/blue
-    color_start = plasma_cmap(0.7)        # orange-yellow
-    color_end = plasma_cmap(0.3)          # purple
-    color_star = plasma_cmap(0.0)         # dark purple/blue
-    color_median = plasma_cmap(0.6)       # orange
-    color_fill = plasma_cmap(0.2)         # dark purple for fill
-    color_samples = plasma_cmap(0.15)     # very dark purple for sample lines
+    # Plasma colormap colors
+    cm = plt.cm.plasma
+    c_iwa_narrow = cm(0.85)    # bright yellow-orange
+    c_iwa_wide = cm(0.5)       # magenta
+    c_orbit_light = cm(0.2)    # dark purple
+    c_orbit_best = cm(0.95)    # bright yellow
+    c_timestamp = cm(0.0)      # dark purple/blue
+    c_start = cm(0.7)          # orange
+    c_end = cm(0.3)            # purple
+    c_star = cm(0.0)           # dark purple/blue
+    c_median = cm(0.6)         # orange
+    c_fill = cm(0.2)           # dark purple
+    c_samples = cm(0.15)       # very dark purple
 
     # PLOT 1: 2D ORBIT
     ax1 = fig.add_subplot(gs[:, 0])
@@ -379,17 +382,15 @@ def index():
     ax1.set_ylabel("Dec Offset [mas]", fontsize=14)
 
     theta = np.linspace(0, 2*np.pi, 100)
-    ax1.plot(IWA*np.cos(theta), IWA*np.sin(theta), color=color_iwa_narrow, lw=4, linestyle='--', label='IWA/OWA (Narrow)')
-    ax1.plot(OWA*np.cos(theta), OWA*np.sin(theta), color=color_iwa_narrow, lw=4, linestyle='--')
-    #ax1.plot(IWAw*np.cos(theta), IWAw*np.sin(theta), color=color_iwa_wide, lw=4, linestyle='--', label='IWA/OWA (Wide, Band 4)')
-    #ax1.plot(OWAw*np.cos(theta), OWAw*np.sin(theta), color=color_iwa_wide, lw=4, linestyle='--')
+    ax1.plot(IWA*np.cos(theta), IWA*np.sin(theta), color=c_iwa_narrow, lw=4, linestyle='--', label='IWA/OWA (Narrow)')
+    ax1.plot(OWA*np.cos(theta), OWA*np.sin(theta), color=c_iwa_narrow, lw=4, linestyle='--')
 
     n_samples = min(100, raoff_2d.shape[1])
     sample_indices = np.random.choice(raoff_2d.shape[1], n_samples, replace=False)
     for i in sample_indices:
-        ax1.plot(raoff_2d[:, i], deoff_2d[:, i], '-', color=color_orbit_light, alpha=0.3, linewidth=0.5)
+        ax1.plot(raoff_2d[:, i], deoff_2d[:, i], '-', color=c_orbit_light, alpha=0.3, linewidth=0.5)
 
-    ax1.plot(raoff_2d[:, best_idx], deoff_2d[:, best_idx], '-', color=color_orbit_best, linewidth=5, label='Best-fit orbit', zorder=10)
+    ax1.plot(raoff_2d[:, best_idx], deoff_2d[:, best_idx], '-', color=c_orbit_light, linewidth=5, label='Best-fit orbit', zorder=10)
 
     timestamp_dates = ['2027-01-01', '2027-06-01', '2028-01-01', '2030-01-01']
     timestamp_epochs = Time(timestamp_dates, format='iso')
@@ -399,16 +400,17 @@ def index():
     deoff_ts = de_interp(timestamp_epochs.mjd)
 
     for i, date in enumerate(timestamp_dates):
-        ax1.plot(raoff_ts[i], deoff_ts[i], 'o', color=color_timestamp, markersize=10, zorder=13)
+        ax1.plot(raoff_ts[i], deoff_ts[i], 'o', color=c_timestamp, markersize=10, zorder=13)
         ax1.annotate(date, xy=(raoff_ts[i], deoff_ts[i]), xytext=(10, 10), textcoords='offset points',
-                     fontsize=10, color=color_timestamp, bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7), zorder=14)
+                     fontsize=10, color=c_timestamp, bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7), zorder=14)
 
-    ax1.plot(raoff_2d[0, best_idx], deoff_2d[0, best_idx], 'o', color=color_start, markersize=12, label=f'Start ({start_date_str})', zorder=12)
-    ax1.plot(raoff_2d[-1, best_idx], deoff_2d[-1, best_idx], 'o', color=color_end, markersize=12, label=f'End ({end_date_str})', zorder=12)
-    ax1.plot(0, 0, '*', color=color_star, markersize=20, label='Star', zorder=15)
+    ax1.plot(raoff_2d[0, best_idx], deoff_2d[0, best_idx], 'o', color=c_start, markersize=12, label=f'Start ({start_date_str})', zorder=12)
+    ax1.plot(raoff_2d[-1, best_idx], deoff_2d[-1, best_idx], 'o', color=c_end, markersize=12, label=f'End ({end_date_str})', zorder=12)
+    ax1.plot(0, 0, '*', color=c_star, markersize=20, label='Star', zorder=15)
 
     ax1.set_aspect('equal')
     ax1.tick_params(axis='both', which='major', labelsize=12)
+    #ax1.legend(loc='best', fontsize=10)
 
     # PLOT 2: SEPARATION VS TIME
     ax2 = fig.add_subplot(gs[0, 1:])
@@ -416,18 +418,18 @@ def index():
     ax2.set_ylabel("Separation [mas]", fontsize=14)
     ax2.tick_params(axis='both', which='major', labelsize=12)
 
-    ax2.plot(times_sep, med_sep, '-', color=color_median, linewidth=2, label='Median separation', marker='o', markersize=4)
-    ax2.fill_between(times_sep, low_sep, high_sep, color=color_fill, alpha=0.5, label='1σ interval')
+    ax2.plot(times_sep, med_sep, '-', color=c_median, linewidth=2, label='Median separation', marker='o', markersize=4)
+    ax2.fill_between(times_sep, low_sep, high_sep, color=c_fill, alpha=0.5, label='1σ interval')
 
     n_plot = min(20, seps.shape[1])
     idxs = np.random.choice(seps.shape[1], n_plot, replace=False)
     for i in idxs:
-        ax2.plot(times_sep, seps[:, i], color=color_samples, linewidth=1, alpha=0.15)
+        ax2.plot(times_sep, seps[:, i], color=c_samples, linewidth=1, alpha=0.15)
 
-    ax2.axhline(y=IWA, color=color_iwa_narrow, linestyle='--', linewidth=4, label='IWA/OWA (Narrow)')
-    ax2.axhline(y=OWA, color=color_iwa_narrow, linestyle='--', linewidth=4)
-    ax2.axhline(y=IWAw, color=color_iwa_wide, linestyle='--', linewidth=4, label='IWA/OWA (Wide)')
-    ax2.axhline(y=OWAw, color=color_iwa_wide, linestyle='--', linewidth=4)
+    ax2.axhline(y=IWA, color=c_iwa_narrow, linestyle='--', linewidth=4, label='IWA/OWA (Narrow)')
+    ax2.axhline(y=OWA, color=c_iwa_narrow, linestyle='--', linewidth=4)
+    ax2.axhline(y=IWAw, color=c_iwa_wide, linestyle='--', linewidth=4, label='IWA/OWA (Wide)')
+    ax2.axhline(y=OWAw, color=c_iwa_wide, linestyle='--', linewidth=4)
 
     ax2.legend(loc='best', fontsize=10)
 
@@ -438,10 +440,10 @@ def index():
     ax3.set_ylabel("Visible [%]", fontsize=14)
     ax3.tick_params(axis='both', which='major', labelsize=12)
 
-    ax3.plot(times_sep, visible_frac_narrow, color=color_iwa_narrow, linewidth=2, marker='o', markersize=4, label='Narrow (155-436 mas)')
-    ax3.fill_between(times_sep, 0, visible_frac_narrow, color=color_iwa_narrow, alpha=0.2)
-    ax3.plot(times_sep, visible_frac_wide, color=color_iwa_wide, linewidth=2, marker='s', markersize=4, label='Wide (450-1300 mas)')
-    ax3.fill_between(times_sep, 0, visible_frac_wide, color=color_iwa_wide, alpha=0.2)
+    ax3.plot(times_sep, visible_frac_narrow, color=c_iwa_narrow, linewidth=2, marker='o', markersize=4, label='Narrow (155-436 mas)')
+    ax3.fill_between(times_sep, 0, visible_frac_narrow, color=c_iwa_narrow, alpha=0.2)
+    ax3.plot(times_sep, visible_frac_wide, color=c_iwa_wide, linewidth=2, marker='s', markersize=4, label='Wide (450-1300 mas)')
+    ax3.fill_between(times_sep, 0, visible_frac_wide, color=c_iwa_wide, alpha=0.2)
 
     ax3.set_ylim([0, 100])
     ax3.legend(loc='best', fontsize=10)
