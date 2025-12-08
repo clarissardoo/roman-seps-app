@@ -622,7 +622,10 @@ def index():
 
     # Plot 2 - sep vs time - using RA/Dec calculations
     ax2=fig.add_subplot(gs[0,2:])
-    ax2.set_title("Separation vs Time",fontsize=14)
+    min_sep_1sigma=np.min(low_sep)
+    max_sep_1sigma=np.max(high_sep)
+
+    ax2.set_title(f"Separation vs Time (1σ Range: {min_sep_1sigma:.0f}-{max_sep_1sigma:.0f} mas)",fontsize=14)
     ax2.set_ylabel("Separation [mas]",fontsize=14)
     ax2.tick_params(axis='both',which='major',labelsize=12)
 
