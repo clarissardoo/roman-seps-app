@@ -570,8 +570,8 @@ def index():
     ax4=fig.add_subplot(gs[:,1])
     title_sky=f"{display_names[planet]}: Sky-Plane Orbit (i={'random' if override_inc is None else f'{override_inc}°'})"
     ax4.set_title(title_sky,fontsize=14)
-    ax4.set_xlabel("Sky-plane offset [mas]",fontsize=14)
-    ax4.set_ylabel("Orbit-plane offset [mas]",fontsize=14)
+    ax4.set_xlabel("Plane of sky offset [mas]",fontsize=14)
+    ax4.set_ylabel("Orbit plane offset [mas]",fontsize=14)
 
     # IWA/OWA lines
     ax4.axvline(IWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
