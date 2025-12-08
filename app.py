@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request
+from flask import Flask,render_template_string,request
 import numpy as np
 import pandas as pd
 from astropy.time import Time
@@ -8,6 +8,7 @@ from orbitize.basis import tp_to_tau
 from orbitize.kepler import calc_orbit
 from astropy import units as u
 import matplotlib
+
 matplotlib.use('Agg')  # Use non-interactive backend for Flask
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
@@ -18,155 +19,283 @@ import os
 
 
 def compute_sep(
-        df, epochs, basis, m0, m0_err, plx, plx_err, n_planets=1, pl_num=1, override_inc=None, override_lan=None
+        df,epochs,basis,m0,m0_err,plx,plx_err,n_planets=1,pl_num=1,override_inc=None,override_lan=None
 ):
     """
     Computes a sky-projected angular separation posterior given a
-    RadVel-computed DataFrame.
+    RadVel-computed DataFrame
+    Adapted from Sarah Blunt's compute_sep function to include override inclnations.
+
+        Args:
+        df (pd.DataFrame): Radvel-computed posterior (in any orbital basis)
+        epochs (np.array of astropy.time.Time): epochs at which to compute
+            separations
+        basis (str): basis string of input posterior (see
+            radvel.basis.BASIS_NAMES` for the full list of possibilities).
+        m0 (float): median of primary mass distribution (assumed Gaussian).
+        m0_err (float): 1sigma error of primary mass distribution
+            (assumed Gaussian).
+        plx (float): median of parallax distribution (assumed Gaussian).
+        plx_err: 1sigma error of parallax distribution (assumed Gaussian).
+        n_planets (int): total number of planets in RadVel posterior
+        pl_num (int): planet number used in RadVel fits (e.g. a RadVel label of
+            'per1' implies `pl_num` == 1)
+        override_inc (float, optional): override inclination (int or None)
+        override_lan (str, optional): override longitude of ascending node (int or None)
+
+    Example:
+
+        >> df = pandas.read_csv('sample_radvel_chains.csv.bz2', index_col=0)
+        >> epochs = astropy.time.Time([2022, 2024], format='decimalyear')
+        >> seps, df_orb = compute_sep(
+               df, epochs, 'per tc secosw sesinw k', 0.82, 0.02, 312.22, 0.47
+           )
+
+    Returns:
+        tuple of:
+            np.array of size (len(epochs) x len(df)): sky-projected angular
+                separations [mas] at each input epoch
+            pd.DataFrame: corresponding orbital posterior in orbitize basis
     """
-    myBasis = Basis(basis, n_planets)
-    df = myBasis.to_synth(df)
-    chain_len = len(df)
-    tau_ref_epoch = 58849
+    myBasis=Basis(basis,n_planets)
+    df=myBasis.to_synth(df)
+    chain_len=len(df)
+    tau_ref_epoch=58849
 
     # convert RadVel posteriors -> orbitize posteriors
-    m_st = np.random.normal(m0, m0_err, size=chain_len)
-    semiamp = df['k{}'.format(pl_num)].values
-    per_day = df['per{}'.format(pl_num)].values
-    period_yr = per_day / 365.25
-    ecc = df['e{}'.format(pl_num)].values
-    msini = (
-        Msini(semiamp, per_day, m_st, ecc, Msini_units='Earth') *
-        (u.M_earth / u.M_sun).to('')
+    m_st=np.random.normal(m0,m0_err,size=chain_len)
+    semiamp=df['k{}'.format(pl_num)].values
+    per_day=df['per{}'.format(pl_num)].values
+    period_yr=per_day/365.25
+    ecc=df['e{}'.format(pl_num)].values
+    msini=(
+            Msini(semiamp,per_day,m_st,ecc,Msini_units='Earth')*
+            (u.M_earth/u.M_sun).to('')
     )
 
     if override_inc is not None:
-        inc = np.full(chain_len, np.radians(override_inc))
+        inc=np.full(chain_len,np.radians(override_inc))
     else:
-        cosi = (2. * np.random.random(size=chain_len)) - 1.
-        inc = np.arccos(cosi)
+        cosi=(2.*np.random.random(size=chain_len))-1.
+        inc=np.arccos(cosi)
 
-    m_pl = msini / np.sin(inc)
-    mtot = m_st + m_pl
-    sma = (period_yr**2 * mtot)**(1/3)
-    omega_st_rad = df['w{}'.format(pl_num)].values
-    omega_pl_rad = omega_st_rad + np.pi
-    parallax = np.random.normal(plx, plx_err, size=chain_len)
+    m_pl=msini/np.sin(inc)
+    mtot=m_st+m_pl
+    sma=(period_yr**2*mtot)**(1/3)
+    omega_st_rad=df['w{}'.format(pl_num)].values
+    omega_pl_rad=omega_st_rad+np.pi
+    parallax=np.random.normal(plx,plx_err,size=chain_len)
 
     if override_lan is not None:
-        lan = np.full(chain_len, np.radians(override_lan))
+        lan=np.full(chain_len,np.radians(override_lan))
     else:
-        lan = np.random.random_sample(size=chain_len) * 2. * np.pi
+        lan=np.random.random_sample(size=chain_len)*2.*np.pi
 
-    tp_mjd = df['tp{}'.format(pl_num)].values - 2400000.5
-    tau = tp_to_tau(tp_mjd, tau_ref_epoch, period_yr)
+    tp_mjd=df['tp{}'.format(pl_num)].values-2400000.5
+    tau=tp_to_tau(tp_mjd,tau_ref_epoch,period_yr)
 
     # compute projected separation in mas
-    raoff, deoff, _ = calc_orbit(
-        epochs.mjd, sma, ecc, inc,
-        omega_pl_rad, lan, tau,
-        parallax, mtot, tau_ref_epoch=tau_ref_epoch
+    raoff,deoff,_=calc_orbit(
+        epochs.mjd,sma,ecc,inc,
+        omega_pl_rad,lan,tau,
+        parallax,mtot,tau_ref_epoch=tau_ref_epoch
     )
-    seps = np.sqrt(raoff**2 + deoff**2)
+    seps=np.sqrt(raoff**2+deoff**2)
 
-    return seps, raoff, deoff
+    return seps,raoff,deoff
 
 
-base_path = Path("orbit_fits")
-orbit_params = {
-    "47_UMa": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 1.0051917028549999, "m0_err": 0.0468882076437500,
-        "plx": 72.452800, "plx_err": 0.150701,
-        "n_planets": 3, "pl_num": 2, "g_mag": 4.866588,
+def compute_sep_skyplane(
+        df,epochs,basis,m0,m0_err,plx,plx_err,
+        n_planets=1,pl_num=1,override_inc=None
+):
+    """
+    Computes sky-plane (non-rotating) projected separation.
+    Uses:
+        X = r cos(f + ω)
+        Y = r sin(f + ω) * cos(i) - collapses Y by inc
+    """
+
+    myBasis=Basis(basis,n_planets)
+    df=myBasis.to_synth(df)
+    chain_len=len(df)
+
+    # Stellar mass distribution
+    m_st=np.random.normal(m0,m0_err,size=chain_len)
+
+    # Orbital params
+    per_day=df[f'per{pl_num}'].values
+    ecc=df[f'e{pl_num}'].values
+    semiamp=df[f'k{pl_num}'].values
+    omega_star=df[f'w{pl_num}'].values
+    omega_pl=omega_star+np.pi
+
+    # Inclination
+    if override_inc is None:
+        cosi=2*np.random.rand(chain_len)-1
+        inc=np.arccos(cosi)
+    else:
+        inc=np.full(chain_len,np.radians(override_inc))
+
+    # Semi-major axis
+    period_yr=per_day/365.25
+    msini=(
+            Msini(semiamp,per_day,m_st,ecc,Msini_units='Earth')
+            *(u.M_earth/u.M_sun).to('')
+    )
+    m_pl=msini/np.sin(inc)
+    mtot=m_st+m_pl
+    sma=(period_yr**2*mtot)**(1/3)
+
+    # Parallax (mas)
+    parallax=np.random.normal(plx,plx_err,size=chain_len)
+
+    # Compute mean anomaly
+    tp_mjd=df[f'tp{pl_num}'].values-2400000.5
+    n=2*np.pi/per_day
+    t_mjd=epochs.mjd[:,None]
+    M=n*(t_mjd-tp_mjd[None,:])
+    # Solve Kepler equation
+    E=M.copy()
+    for _ in range(7):
+        E=M+ecc[None,:]*np.sin(E)
+
+    # True anomaly f
+    f=2*np.arctan2(
+        np.sqrt(1+ecc)*np.sin(E/2),
+        np.sqrt(1-ecc)*np.cos(E/2)
+    )
+
+    # Radius
+    r=sma[None,:]*(1-ecc[None,:]**2)/(1+ecc[None,:]*np.cos(f))
+
+    # Sky-plane coordinates (Ω removed)
+    theta=f+omega_pl[None,:]
+
+    X_au=r*np.cos(theta)
+    Y_au=r*np.sin(theta)*np.cos(inc)[None,:]
+
+    # Convert AU → mas
+    X_mas=X_au*parallax[None,:]
+    Y_mas=Y_au*parallax[None,:]
+
+    seps=np.sqrt(X_mas**2+Y_mas**2)
+
+    return seps,X_mas,Y_mas
+
+
+base_path=Path("orbit_fits")
+
+# Display names for prettier UI
+display_names={
+    "47_UMa":"47 UMa c",
+    "55_Cnc":"55 Cancri d",
+    "eps_Eri":"Eps Eri b",
+    "HD_87883":"HD 87883 b",
+    "HD_114783":"HD 114783 c",
+    "HD_134987":"HD 134987 c",
+    "HD_154345":"HD 154345 b",
+    "HD_160691":"HD 160691 e",
+    "HD_190360":"HD 190360 b",
+    "HD_217107":"HD 217107 c",
+    "pi_Men":"Pi Men b",
+    "ups_And":"Ups And d",
+    "HD_192310":"HD 192310 c",
+}
+
+orbit_params={
+    "47_UMa":{
+        "basis":"per tc secosw sesinw k",
+        "m0":1.0051917028549999,"m0_err":0.0468882076437500,
+        "plx":72.452800,"plx_err":0.150701,
+        "n_planets":3,"pl_num":2,"g_mag":4.866588,
     },
-    "55_Cnc": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 0.905, "m0_err": 0.015,
-        "plx": 79.4274000, "plx_err": 0.0776646,
-        "n_planets": 5, "pl_num": 3, "g_mag": 5.732681,
+    "55_Cnc":{
+        "basis":"per tc secosw sesinw k",
+        "m0":0.905,"m0_err":0.015,
+        "plx":79.4274000,"plx_err":0.0776646,
+        "n_planets":5,"pl_num":3,"g_mag":5.732681,
     },
-    "eps_Eri": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 0.82, "m0_err": 0.02,
-        "plx": 312.219000, "plx_err": 0.467348,
-        "n_planets": 1, "pl_num": 1, "g_mag": 3.465752,
+    "eps_Eri":{
+        "basis":"per tc secosw sesinw k",
+        "m0":0.82,"m0_err":0.02,
+        "plx":312.219000,"plx_err":0.467348,
+        "n_planets":1,"pl_num":1,"g_mag":3.465752,
     },
-    "HD_87883": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 0.810, "m0_err": 0.091,
-        "plx": 54.6421000, "plx_err": 0.0369056,
-        "n_planets": 1, "pl_num": 1, "g_mag": 7.286231,
+    "HD_87883":{
+        "basis":"per tc secosw sesinw k",
+        "m0":0.810,"m0_err":0.091,
+        "plx":54.6421000,"plx_err":0.0369056,
+        "n_planets":1,"pl_num":1,"g_mag":7.286231,
     },
-    "HD_114783": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 0.90, "m0_err": 0.04,
-        "plx": 47.4482000, "plx_err": 0.0637202,
-        "n_planets": 2, "pl_num": 2, "g_mag": 7.330857,
+    "HD_114783":{
+        "basis":"per tc secosw sesinw k",
+        "m0":0.90,"m0_err":0.04,
+        "plx":47.4482000,"plx_err":0.0637202,
+        "n_planets":2,"pl_num":2,"g_mag":7.330857,
     },
-    "HD_134987": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 1.0926444945650000, "m0_err": 0.0474835459017250,
-        "plx": 38.1678000, "plx_err": 0.0746519,
-        "n_planets": 2, "pl_num": 2, "g_mag": 6.302472,
+    "HD_134987":{
+        "basis":"per tc secosw sesinw k",
+        "m0":1.0926444945650000,"m0_err":0.0474835459017250,
+        "plx":38.1678000,"plx_err":0.0746519,
+        "n_planets":2,"pl_num":2,"g_mag":6.302472,
     },
-    "HD_154345": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 0.88, "m0_err": 0.09,
-        "plx": 54.6636000, "plx_err": 0.0212277,
-        "n_planets": 1, "pl_num": 1, "g_mag": 6.583667,
+    "HD_154345":{
+        "basis":"per tc secosw sesinw k",
+        "m0":0.88,"m0_err":0.09,
+        "plx":54.6636000,"plx_err":0.0212277,
+        "n_planets":1,"pl_num":1,"g_mag":6.583667,
     },
-    "HD_160691": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 1.13, "m0_err": 0.02,
-        "plx": 64.082, "plx_err": 0.120162,
-        "n_planets": 4, "pl_num": 4, "g_mag": 4.942752,
+    "HD_160691":{
+        "basis":"per tc secosw sesinw k",
+        "m0":1.13,"m0_err":0.02,
+        "plx":64.082,"plx_err":0.120162,
+        "n_planets":4,"pl_num":4,"g_mag":4.942752,
     },
-    "HD_190360": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 1.0, "m0_err": 0.1,
-        "plx": 62.4443000, "plx_err": 0.0616881,
-        "n_planets": 2, "pl_num": 1, "g_mag": 5.552787
+    "HD_190360":{
+        "basis":"per tc secosw sesinw k",
+        "m0":1.0,"m0_err":0.1,
+        "plx":62.4443000,"plx_err":0.0616881,
+        "n_planets":2,"pl_num":1,"g_mag":5.552787
     },
-    "HD_217107": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 1.05963082882500, "m0_err": 0.04470613802572,
-        "plx": 49.8170000, "plx_err": 0.0573616,
-        "n_planets": 2, "pl_num": 2, "g_mag": 5.996743
+    "HD_217107":{
+        "basis":"per tc secosw sesinw k",
+        "m0":1.05963082882500,"m0_err":0.04470613802572,
+        "plx":49.8170000,"plx_err":0.0573616,
+        "n_planets":2,"pl_num":2,"g_mag":5.996743
     },
-    "pi_Men": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 1.10, "m0_err": 0.14,
-        "plx": 54.705200, "plx_err": 0.067131,
-        "n_planets": 1, "pl_num": 1, "g_mag": 5.511580
+    "pi_Men":{
+        "basis":"per tc secosw sesinw k",
+        "m0":1.10,"m0_err":0.14,
+        "plx":54.705200,"plx_err":0.067131,
+        "n_planets":1,"pl_num":1,"g_mag":5.511580
     },
-    "ups_And": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 1.29419667430000, "m0_err": 0.04122482369025,
-        "plx": 74.571100, "plx_err": 0.349118,
-        "n_planets": 3, "pl_num": 3, "g_mag": 3.966133
+    "ups_And":{
+        "basis":"per tc secosw sesinw k",
+        "m0":1.29419667430000,"m0_err":0.04122482369025,
+        "plx":74.571100,"plx_err":0.349118,
+        "n_planets":3,"pl_num":3,"g_mag":3.966133
     },
-    "HD_192310": {
-        "basis": "per tc secosw sesinw k",
-        "m0": 0.84432448757250, "m0_err": 0.02820926681885,
-        "plx": 113.648000, "plx_err": 0.118606,
-        "n_planets": 2, "pl_num": 2, "g_mag": 5.481350
+    "HD_192310":{
+        "basis":"per tc secosw sesinw k",
+        "m0":0.84432448757250,"m0_err":0.02820926681885,
+        "plx":113.648000,"plx_err":0.118606,
+        "n_planets":2,"pl_num":2,"g_mag":5.481350
     },
 }
 
-posterior_cache = {}
+posterior_cache={}
 for name in orbit_params.keys():
-    files = list((base_path / name).glob("*.csv.bz2"))
+    files=list((base_path/name).glob("*.csv.bz2"))
     if files:
-        posterior_cache[name] = pd.read_csv(files[0])
+        posterior_cache[name]=pd.read_csv(files[0])
     else:
-        posterior_cache[name] = None
-
+        posterior_cache[name]=None
 
 # Flask App
-app = Flask(__name__)
+app=Flask(__name__)
 
-HTML = """
+HTML="""
 <!doctype html>
 <html>
 <head>
@@ -192,7 +321,7 @@ HTML = """
     <label>Planet:</label>
     <select name="planet">
       {% for name in planets %}
-        <option value="{{name}}" {% if name == selected_planet %}selected{% endif %}>{{name}}</option>
+        <option value="{{name}}" {% if name == selected_planet %}selected{% endif %}>{{display_names[name]}}</option>
       {% endfor %}
     </select>
   </div>
@@ -218,7 +347,7 @@ HTML = """
   </div>
 
   <div class="form-group">
-    <label>Number of samples (default 200):</label>
+    <label>Number of samples (default 200 or "all"):</label>
     <input type="text" name="nsamp" value="{{nsamp or '200'}}" placeholder="200">
   </div>
 
@@ -239,232 +368,313 @@ HTML = """
 """
 
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/",methods=["GET","POST"])
 def index():
-    if request.method == "GET":
+    if request.method=="GET":
         return render_template_string(
-            HTML, planets=orbit_params.keys(), plot_img=None, error=None,
-            selected_planet=None, start_date=None, end_date=None,
-            inclination=None, lan=None, nsamp=None
+            HTML,planets=orbit_params.keys(),display_names=display_names,plot_img=None,error=None,
+            selected_planet=None,start_date=None,end_date=None,
+            inclination=None,lan=None,nsamp=None
         )
 
     # Get form data
-    planet = request.form["planet"]
-    start_date_str = request.form["start_date"]
-    end_date_str = request.form["end_date"]
-    inc_str = request.form.get("inclination", "random").strip()
-    lan_str = request.form.get("lan", "random").strip()
-    nsamp_str = request.form.get("nsamp", "200").strip()
+    planet=request.form["planet"]
+    start_date_str=request.form["start_date"]
+    end_date_str=request.form["end_date"]
+    inc_str=request.form.get("inclination","random").strip()
+    lan_str=request.form.get("lan","random").strip()
+    nsamp_str=request.form.get("nsamp","200").strip()
 
-    # Parse parameters
+    # parse parameters
     try:
-        nsamp = int(nsamp_str) if nsamp_str else 200
-        override_inc = None if inc_str.lower() == "random" else float(inc_str)
-        override_lan = None if lan_str.lower() == "random" else float(lan_str)
+        if nsamp_str.lower()=="all":
+            nsamp=None  # Use all samples
+        else:
+            nsamp=int(nsamp_str) if nsamp_str else 200
+        override_inc=None if inc_str.lower()=="random" else float(inc_str)
+        override_lan=None if lan_str.lower()=="random" else float(lan_str)
     except ValueError as e:
         return render_template_string(
-            HTML, planets=orbit_params.keys(), plot_img=None,
+            HTML,planets=orbit_params.keys(),display_names=display_names,plot_img=None,
             error=f"Invalid input: {e}",
-            selected_planet=planet, start_date=start_date_str, end_date=end_date_str,
-            inclination=inc_str, lan=lan_str, nsamp=nsamp_str
+            selected_planet=planet,start_date=start_date_str,end_date=end_date_str,
+            inclination=inc_str,lan=lan_str,nsamp=nsamp_str
         )
 
     if posterior_cache[planet] is None:
         return render_template_string(
-            HTML, planets=orbit_params.keys(), plot_img=None,
+            HTML,planets=orbit_params.keys(),display_names=display_names,plot_img=None,
             error=f"No posterior data found for {planet}",
-            selected_planet=planet, start_date=start_date_str, end_date=end_date_str,
-            inclination=inc_str, lan=lan_str, nsamp=nsamp_str
+            selected_planet=planet,start_date=start_date_str,end_date=end_date_str,
+            inclination=inc_str,lan=lan_str,nsamp=nsamp_str
         )
 
-    df = posterior_cache[planet]
-    params = orbit_params[planet]
+    df=posterior_cache[planet]
+    params=orbit_params[planet]
 
     # Dates
     try:
-        t_start = Time(start_date_str)
-        t_end = Time(end_date_str)
+        t_start=Time(start_date_str)
+        t_end=Time(end_date_str)
     except:
         return render_template_string(
-            HTML, planets=orbit_params.keys(), plot_img=None,
+            HTML,planets=orbit_params.keys(),display_names=display_names,plot_img=None,
             error="Invalid date format. Try: 2026-06-01",
-            selected_planet=planet, start_date=start_date_str, end_date=end_date_str,
-            inclination=inc_str, lan=lan_str, nsamp=nsamp_str
+            selected_planet=planet,start_date=start_date_str,end_date=end_date_str,
+            inclination=inc_str,lan=lan_str,nsamp=nsamp_str
         )
 
-    if t_end <= t_start:
+    if t_end<=t_start:
         return render_template_string(
-            HTML, planets=orbit_params.keys(), plot_img=None,
+            HTML,planets=orbit_params.keys(),display_names=display_names,plot_img=None,
             error="End date must be after start date.",
-            selected_planet=planet, start_date=start_date_str, end_date=end_date_str,
-            inclination=inc_str, lan=lan_str, nsamp=nsamp_str
+            selected_planet=planet,start_date=start_date_str,end_date=end_date_str,
+            inclination=inc_str,lan=lan_str,nsamp=nsamp_str
         )
 
-    # Sample from posterior
-    df_sample = df.sample(nsamp, replace=True)
-    myBasis = Basis(params["basis"], params["n_planets"])
-    df_synth = myBasis.to_synth(df)
+    #sample from posteriors
+    if nsamp is None:
+        df_sample=df  # Use all samples
+    else:
+        df_sample=df.sample(nsamp,replace=True)
 
-    # Build epoch sampling
-    epochs_sep = Time(np.linspace(t_start.mjd, t_end.mjd, 40), format="mjd")
-    times_sep = epochs_sep.decimalyear
+    myBasis=Basis(params["basis"],params["n_planets"])
 
-    epochs_2d = Time(np.linspace(t_start.mjd, t_end.mjd, 100), format="mjd")
+    # Get best_idx from FULL posterior
+    df_synth_full=myBasis.to_synth(df)
+    best_original_idx=int(df_synth_full["lnprobability"].idxmax())
 
-    # =========================================
-    # COMPUTE SEPARATIONS
-    # =========================================
-    seps, _, _ = compute_sep(
-        df_sample, epochs_sep,
-        params["basis"], params["m0"], params["m0_err"],
-        params["plx"], params["plx_err"],
-        params["n_planets"], params["pl_num"],
+    # Now create synth from sampled data
+    df_synth=myBasis.to_synth(df_sample)
+    epochs_sep=Time(np.linspace(t_start.mjd,t_end.mjd,40),format="mjd")
+    times_sep=epochs_sep.decimalyear
+
+    epochs_2d=Time(np.linspace(t_start.mjd,t_end.mjd,100),format="mjd")
+
+
+    # Compute RA/DEC seps
+    seps,_,_=compute_sep(
+        df_sample,epochs_sep,
+        params["basis"],params["m0"],params["m0_err"],
+        params["plx"],params["plx_err"],
+        params["n_planets"],params["pl_num"],
         override_inc=override_inc,
         override_lan=override_lan
     )
 
     # Stats
-    med_sep = np.median(seps, axis=1)
-    low_sep = np.percentile(seps, 16, axis=1)
-    high_sep = np.percentile(seps, 84, axis=1)
+    med_sep=np.median(seps,axis=1)
+    low_sep=np.percentile(seps,16,axis=1)
+    high_sep=np.percentile(seps,84,axis=1)
 
     # Visibility fractions
-    IWA = 155
-    OWA = 436
-    IWAw = 450
-    OWAw = 1300
-    visible_frac_narrow = np.mean((seps >= IWA) & (seps <= OWA), axis=1) * 100
-    visible_frac_wide = np.mean((seps >= IWAw) & (seps <= OWAw), axis=1) * 100
+    IWA=155
+    OWA=436
+    IWAw=450
+    OWAw=1300
+    visible_frac_narrow=np.mean((seps>=IWA)&(seps<=OWA),axis=1)*100
+    visible_frac_wide=np.mean((seps>=IWAw)&(seps<=OWAw),axis=1)*100
 
-    # =========================================
-    # COMPUTE FOR 2D ORBIT
-    # =========================================
-    seps_2d, raoff_2d, deoff_2d = compute_sep(
-        df_synth, epochs_2d,
-        params["basis"], params["m0"], params["m0_err"],
-        params["plx"], params["plx_err"],
-        params["n_planets"], params["pl_num"],
+    # compute 2d ra/dec plot
+    seps_2d,raoff_2d,deoff_2d=compute_sep(
+        df_synth,epochs_2d,
+        params["basis"],params["m0"],params["m0_err"],
+        params["plx"],params["plx_err"],
+        params["n_planets"],params["pl_num"],
         override_inc=override_inc,
         override_lan=override_lan
     )
 
-    best_idx = int(df_synth["lnprobability"].idxmax())
+    # plane of sky computation
+    seps_2d_sky,raoff_2d_sky,deoff_2d_sky=compute_sep_skyplane(
+        df_synth,epochs_2d,
+        params["basis"],params["m0"],params["m0_err"],
+        params["plx"],params["plx_err"],
+        params["n_planets"],params["pl_num"],
+        override_inc=override_inc
+    )
+
+    # Find where best_original_idx appears in our sampled df_synth
+    if best_original_idx in df_synth.index:
+        best_idx=df_synth.index.get_loc(best_original_idx)
+    else:
+        # If best isn't in sample, use the best from the sample
+        best_idx=df_synth["lnprobability"].argmax()
 
     # =========================================
-    # CREATE PLOT WITH PLASMA COLORS
+    # CREATE PLOT WITH PLASMA COLORS (4 subplots)
     # =========================================
-    fig = plt.figure(figsize=(22, 8))
-    gs = fig.add_gridspec(2, 3, height_ratios=[1, 0.5], width_ratios=[1.5, 1, 1], hspace=0.3, wspace=0.3)
+    fig=plt.figure(figsize=(28,8))
+    gs=fig.add_gridspec(2,4,height_ratios=[1,0.5],width_ratios=[1.2,1.2,1,1],hspace=0.3,wspace=0.3)
 
     # Plasma colormap colors
-    cm = plt.cm.plasma
-    c_iwa_narrow = cm(0.85)    # bright yellow-orange
-    c_iwa_wide = cm(0.5)       # magenta
-    c_orbit_light = cm(0.2)    # dark purple
-    c_orbit_best = cm(0.95)    # bright yellow
-    c_timestamp = cm(0.0)      # dark purple/blue
-    c_start = cm(0.7)          # orange
-    c_end = cm(0.3)            # purple
-    c_star = cm(0.0)           # dark purple/blue
-    c_median = cm(0.6)         # orange
-    c_fill = cm(0.2)           # dark purple
-    c_samples = cm(0.15)       # very dark purple
+    cm=plt.cm.plasma
+    c_iwa_narrow=cm(0.85)  # bright yellow-orange
+    c_iwa_wide=cm(0.5)  # magenta
+    c_orbit_light=cm(0.2)  # dark purple
+    c_orbit_best=cm(0.95)  # bright yellow
+    c_timestamp=cm(0.0)  # dark purple/blue
+    c_start=cm(0.7)  # orange
+    c_end=cm(0.3)  # purple
+    c_star=cm(0.0)  # dark purple/blue
+    c_median=cm(0.6)  # orange
+    c_fill=cm(0.2)  # dark purple
+    c_samples=cm(0.15)  # very dark purple
 
-    # PLOT 1: 2D ORBIT
-    ax1 = fig.add_subplot(gs[:, 0])
-    title_2d = f"{planet}: Orbital Trajectory (i={'random' if override_inc is None else f'{override_inc}°'}"
+    # PLOT 1: 2D ORBIT (ra/dec)
+    ax1=fig.add_subplot(gs[:,0])
+    title_2d=f"{display_names[planet]}: Orbital Trajectory (i={'random' if override_inc is None else f'{override_inc}°'}"
     if override_lan is not None:
-        title_2d += f", Ω={override_lan}°)"
+        title_2d+=f", Ω={override_lan}°)"
     else:
-        title_2d += ", Ω=random)"
-    ax1.set_title(title_2d, fontsize=14)
-    ax1.set_xlabel("RA Offset [mas]", fontsize=14)
-    ax1.set_ylabel("Dec Offset [mas]", fontsize=14)
+        title_2d+=", Ω=random)"
+    ax1.set_title(title_2d,fontsize=14)
+    ax1.set_xlabel("RA Offset [mas]",fontsize=14)
+    ax1.set_ylabel("Dec Offset [mas]",fontsize=14)
 
-    theta = np.linspace(0, 2*np.pi, 100)
-    ax1.plot(IWA*np.cos(theta), IWA*np.sin(theta), color=c_iwa_narrow, lw=4, linestyle='--', label='IWA/OWA (Narrow)')
-    ax1.plot(OWA*np.cos(theta), OWA*np.sin(theta), color=c_iwa_narrow, lw=4, linestyle='--')
+    theta=np.linspace(0,2*np.pi,100)
+    ax1.plot(IWA*np.cos(theta),IWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--',label='IWA/OWA (Narrow)')
+    ax1.plot(OWA*np.cos(theta),OWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--')
 
-    n_samples = min(100, raoff_2d.shape[1])
-    sample_indices = np.random.choice(raoff_2d.shape[1], n_samples, replace=False)
+    n_samples=min(100,raoff_2d.shape[1])
+    sample_indices=np.random.choice(raoff_2d.shape[1],n_samples,replace=False)
     for i in sample_indices:
-        ax1.plot(raoff_2d[:, i], deoff_2d[:, i], '-', color=c_orbit_light, alpha=0.3, linewidth=0.5)
+        ax1.plot(raoff_2d[:,i],deoff_2d[:,i],'-',color=c_orbit_light,alpha=0.3,linewidth=0.5)
 
-    ax1.plot(raoff_2d[:, best_idx], deoff_2d[:, best_idx], '-', color=c_orbit_light, linewidth=5, label='Best-fit orbit', zorder=10)
+    ax1.plot(raoff_2d[:,best_idx],deoff_2d[:,best_idx],'-',color=c_orbit_light,linewidth=5,label='Best-fit orbit',
+             zorder=10)
 
-    timestamp_dates = ['2027-01-01', '2027-06-01', '2028-01-01', '2030-01-01']
-    timestamp_epochs = Time(timestamp_dates, format='iso')
-    ra_interp = interp1d(epochs_2d.mjd, raoff_2d[:, best_idx], kind='cubic', fill_value='extrapolate')
-    de_interp = interp1d(epochs_2d.mjd, deoff_2d[:, best_idx], kind='cubic', fill_value='extrapolate')
-    raoff_ts = ra_interp(timestamp_epochs.mjd)
-    deoff_ts = de_interp(timestamp_epochs.mjd)
+    timestamp_dates=['2027-01-01','2027-06-01','2028-01-01','2030-01-01']
+    timestamp_epochs=Time(timestamp_dates,format='iso')
+    ra_interp=interp1d(epochs_2d.mjd,raoff_2d[:,best_idx],kind='cubic',fill_value='extrapolate')
+    de_interp=interp1d(epochs_2d.mjd,deoff_2d[:,best_idx],kind='cubic',fill_value='extrapolate')
+    raoff_ts=ra_interp(timestamp_epochs.mjd)
+    deoff_ts=de_interp(timestamp_epochs.mjd)
 
-    for i, date in enumerate(timestamp_dates):
-        ax1.plot(raoff_ts[i], deoff_ts[i], 'o', color=c_timestamp, markersize=10, zorder=13)
-        ax1.annotate(date, xy=(raoff_ts[i], deoff_ts[i]), xytext=(10, 10), textcoords='offset points',
-                     fontsize=10, color=c_timestamp, bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7), zorder=14)
+    for i,date in enumerate(timestamp_dates):
+        ax1.plot(raoff_ts[i],deoff_ts[i],'o',color=c_timestamp,markersize=10,zorder=13)
+        ax1.annotate(date,xy=(raoff_ts[i],deoff_ts[i]),xytext=(10,10),textcoords='offset points',
+                     fontsize=10,color=c_timestamp,bbox=dict(boxstyle='round,pad=0.3',facecolor='white',alpha=0.7),
+                     zorder=14)
 
-    ax1.plot(raoff_2d[0, best_idx], deoff_2d[0, best_idx], 'o', color=c_start, markersize=12, label=f'Start ({start_date_str})', zorder=12)
-    ax1.plot(raoff_2d[-1, best_idx], deoff_2d[-1, best_idx], 'o', color=c_end, markersize=12, label=f'End ({end_date_str})', zorder=12)
-    ax1.plot(0, 0, '*', color=c_star, markersize=20, label='Star', zorder=15)
+    ax1.plot(raoff_2d[0,best_idx],deoff_2d[0,best_idx],'o',color=c_start,markersize=12,
+             label=f'Start ({start_date_str})',zorder=12)
+    ax1.plot(raoff_2d[-1,best_idx],deoff_2d[-1,best_idx],'o',color=c_end,markersize=12,label=f'End ({end_date_str})',
+             zorder=12)
+    ax1.plot(0,0,'*',color=c_star,markersize=20,label='Star',zorder=15)
 
     ax1.set_aspect('equal')
-    ax1.tick_params(axis='both', which='major', labelsize=12)
-    #ax1.legend(loc='best', fontsize=10)
+    ax1.tick_params(axis='both',which='major',labelsize=12)
 
-    # PLOT 2: SEPARATION VS TIME
-    ax2 = fig.add_subplot(gs[0, 1:])
-    ax2.set_title("Separation vs Time", fontsize=14)
-    ax2.set_ylabel("Separation [mas]", fontsize=14)
-    ax2.tick_params(axis='both', which='major', labelsize=12)
+    # PLOT 4: sky plane orbit
+    ax4=fig.add_subplot(gs[:,1])
+    title_sky=f"{display_names[planet]}: Sky-Plane Orbit (i={'random' if override_inc is None else f'{override_inc}°'})"
+    ax4.set_title(title_sky,fontsize=14)
+    ax4.set_xlabel("Sky-plane offset [mas]",fontsize=14)
+    ax4.set_ylabel("Orbit-plane offset [mas]",fontsize=14)
 
-    ax2.plot(times_sep, med_sep, '-', color=c_median, linewidth=2, label='Median separation', marker='o', markersize=4)
-    ax2.fill_between(times_sep, low_sep, high_sep, color=c_fill, alpha=0.5, label='1σ interval')
+    # IWA/OWA lines
+    ax4.axvline(IWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
+    ax4.axvline(-IWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
+    ax4.axvline(OWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
+    ax4.axvline(-OWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
 
-    n_plot = min(20, seps.shape[1])
-    idxs = np.random.choice(seps.shape[1], n_plot, replace=False)
+    # Plot sample orbits
+    n_samples_sky=min(100,raoff_2d_sky.shape[1])
+    indices_sky=np.random.choice(raoff_2d_sky.shape[1],n_samples_sky,replace=False)
+    for i in indices_sky:
+        ax4.plot(raoff_2d_sky[:,i],deoff_2d_sky[:,i],'-',color=c_orbit_light,
+                 alpha=0.3,linewidth=0.5)
+
+    ax4.plot(raoff_2d_sky[:,best_idx],deoff_2d_sky[:,best_idx],'-',
+             color=c_orbit_light,linewidth=5,zorder=10)
+
+    # Timestamps
+    ts_dates=['2027-01-01','2027-06-01','2028-06-01','2029-01-01']
+    ts_epochs=Time(ts_dates,format='iso')
+    ra_interp_sky=interp1d(epochs_2d.mjd,raoff_2d_sky[:,best_idx],kind='cubic',fill_value='extrapolate')
+    de_interp_sky=interp1d(epochs_2d.mjd,deoff_2d_sky[:,best_idx],kind='cubic',fill_value='extrapolate')
+    ra_ts_sky=ra_interp_sky(ts_epochs.mjd)
+    de_ts_sky=de_interp_sky(ts_epochs.mjd)
+
+    for i,date in enumerate(ts_dates):
+        ax4.plot(ra_ts_sky[i],de_ts_sky[i],'o',color=c_timestamp,markersize=10,zorder=13)
+        ax4.annotate(date,xy=(ra_ts_sky[i],de_ts_sky[i]),xytext=(10,10),
+                     textcoords='offset points',fontsize=10,color=c_timestamp,
+                     bbox=dict(boxstyle='round',facecolor='white',alpha=0.7),zorder=14)
+
+    ax4.plot(raoff_2d_sky[0,best_idx],deoff_2d_sky[0,best_idx],'o',
+             color=c_start,markersize=12,zorder=12)
+    ax4.plot(raoff_2d_sky[-1,best_idx],deoff_2d_sky[-1,best_idx],'o',
+             color=c_end,markersize=12,zorder=12)
+    ax4.plot(0,0,'*',color=c_star,markersize=20,zorder=15)
+
+    ax4.set_aspect('equal')
+    ax4.tick_params(axis='both',which='major',labelsize=12)
+
+    # Set axis limits - special case for eps_Eri
+    if planet=="eps_Eri":
+        ax4.set_xlim(-1300,1300)
+        ax4.set_ylim(-1300,1300)
+    else:
+        ax4.set_xlim(-500,500)
+        ax4.set_ylim(-500,500)
+
+    # Plot 2 - sep vs time - using RA/Dec calculations
+    ax2=fig.add_subplot(gs[0,2:])
+    ax2.set_title("Separation vs Time",fontsize=14)
+    ax2.set_ylabel("Separation [mas]",fontsize=14)
+    ax2.tick_params(axis='both',which='major',labelsize=12)
+
+    ax2.plot(times_sep,med_sep,'-',color=c_median,linewidth=2,label='Median separation',marker='o',markersize=4)
+    ax2.fill_between(times_sep,low_sep,high_sep,color=c_fill,alpha=0.5,label='1σ interval')
+
+    n_plot=min(20,seps.shape[1])
+    idxs=np.random.choice(seps.shape[1],n_plot,replace=False)
     for i in idxs:
-        ax2.plot(times_sep, seps[:, i], color=c_samples, linewidth=1, alpha=0.15)
+        ax2.plot(times_sep,seps[:,i],color=c_samples,linewidth=1,alpha=0.15)
 
-    ax2.axhline(y=IWA, color=c_iwa_narrow, linestyle='--', linewidth=4, label='IWA/OWA (Narrow)')
-    ax2.axhline(y=OWA, color=c_iwa_narrow, linestyle='--', linewidth=4)
-    ax2.axhline(y=IWAw, color=c_iwa_wide, linestyle='--', linewidth=4, label='IWA/OWA (Wide)')
-    ax2.axhline(y=OWAw, color=c_iwa_wide, linestyle='--', linewidth=4)
+    ax2.axhline(y=IWA,color=c_iwa_narrow,linestyle='--',linewidth=4,label='IWA/OWA (Narrow)')
+    ax2.axhline(y=OWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
+    ax2.axhline(y=IWAw,color=c_iwa_wide,linestyle='--',linewidth=4,label='IWA/OWA (Wide)')
+    ax2.axhline(y=OWAw,color=c_iwa_wide,linestyle='--',linewidth=4)
 
-    ax2.legend(loc='best', fontsize=10)
+    ax2.legend(loc='best',fontsize=10)
 
-    # PLOT 3: VISIBILITY FRACTION
-    ax3 = fig.add_subplot(gs[1, 1:], sharex=ax2)
-    ax3.set_title("Visibility Fraction", fontsize=14)
-    ax3.set_xlabel("Year", fontsize=14)
-    ax3.set_ylabel("Visible [%]", fontsize=14)
-    ax3.tick_params(axis='both', which='major', labelsize=12)
+    # Plot 3 - vis fraction (using RA/Dec calculaitons)
+    ax3=fig.add_subplot(gs[1,2:],sharex=ax2)
+    ax3.set_title("Visibility Fraction",fontsize=14)
+    ax3.set_xlabel("Year",fontsize=14)
+    ax3.set_ylabel("Visible [%]",fontsize=14)
+    ax3.tick_params(axis='both',which='major',labelsize=12)
 
-    ax3.plot(times_sep, visible_frac_narrow, color=c_iwa_narrow, linewidth=2, marker='o', markersize=4, label='Narrow (155-436 mas)')
-    ax3.fill_between(times_sep, 0, visible_frac_narrow, color=c_iwa_narrow, alpha=0.2)
-    ax3.plot(times_sep, visible_frac_wide, color=c_iwa_wide, linewidth=2, marker='s', markersize=4, label='Wide (450-1300 mas)')
-    ax3.fill_between(times_sep, 0, visible_frac_wide, color=c_iwa_wide, alpha=0.2)
+    ax3.plot(times_sep,visible_frac_narrow,color=c_iwa_narrow,linewidth=2,marker='o',markersize=4,
+             label='Narrow (155-436 mas)')
+    ax3.fill_between(times_sep,0,visible_frac_narrow,color=c_iwa_narrow,alpha=0.2)
+    ax3.plot(times_sep,visible_frac_wide,color=c_iwa_wide,linewidth=2,marker='s',markersize=4,
+             label='Wide (450-1300 mas)')
+    ax3.fill_between(times_sep,0,visible_frac_wide,color=c_iwa_wide,alpha=0.2)
 
-    ax3.set_ylim([0, 100])
-    ax3.legend(loc='best', fontsize=10)
+    ax3.set_ylim([0,100])
+    ax3.legend(loc='best',fontsize=10)
 
-    plt.suptitle(f"{planet}: {start_date_str} → {end_date_str}", fontsize=16, y=0.98)
+    plt.suptitle(f"{display_names[planet]}: {start_date_str} → {end_date_str}",fontsize=16,y=0.98)
     plt.tight_layout()
 
     # Convert to base64
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+    buf=io.BytesIO()
+    plt.savefig(buf,format='png',dpi=150,bbox_inches='tight')
     buf.seek(0)
-    plot_b64 = base64.b64encode(buf.read()).decode('utf-8')
+    plot_b64=base64.b64encode(buf.read()).decode('utf-8')
     buf.close()
     plt.close(fig)
 
     return render_template_string(
-        HTML, planets=orbit_params.keys(), plot_img=plot_b64, error=None,
-        selected_planet=planet, start_date=start_date_str, end_date=end_date_str,
-        inclination=inc_str, lan=lan_str, nsamp=nsamp_str
+        HTML,planets=orbit_params.keys(),display_names=display_names,plot_img=plot_b64,error=None,
+        selected_planet=planet,start_date=start_date_str,end_date=end_date_str,
+        inclination=inc_str,lan=lan_str,nsamp=nsamp_str
     )
 
 
-if __name__ == "__main__":
-    app.run(host=os.getenv('HOST', '0.0.0.0'), port=int(os.getenv('PORT', 8080)), debug=False)
+if __name__=="__main__":
+    app.run(host=os.getenv('HOST','0.0.0.0'),port=int(os.getenv('PORT',8080)),debug=False)
