@@ -620,7 +620,7 @@ def index():
         ax4.set_xlim(-500,500)
         ax4.set_ylim(-500,500)
 
-    # Plot 2 - sep vs time - using RA/Dec calculations
+    # Plot 2 - sep vs time - using RA/Dec calculations!
     ax2=fig.add_subplot(gs[0,2:])
     min_sep_1sigma=np.min(low_sep)
     max_sep_1sigma=np.max(high_sep)
