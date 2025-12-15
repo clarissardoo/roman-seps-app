@@ -9,13 +9,29 @@ from orbitize.kepler import calc_orbit
 from astropy import units as u
 import matplotlib
 
-matplotlib.use('Agg')  # Use non-interactive backend for Flask
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
+
 import io
 import base64
 from pathlib import Path
 import os
+
+
+def weighted_percentile(data,weights,percentile):
+    """Compute weighted percentile given posteriors and ln-like weights from posteriors sampled"""
+    result=np.zeros(data.shape[0])
+    for i in range(data.shape[0]):
+        sorted_indices=np.argsort(data[i,:])
+        sorted_data=data[i,sorted_indices]
+        sorted_weights=weights[sorted_indices]
+        cumsum=np.cumsum(sorted_weights)
+        cutoff=percentile/100.0
+        idx=np.searchsorted(cumsum,cutoff)
+        if idx>=len(sorted_data):
+            idx=len(sorted_data)-1
+        result[i]=sorted_data[idx]
+    return result
 
 
 def compute_sep(
@@ -347,8 +363,8 @@ HTML="""
   </div>
 
   <div class="form-group">
-    <label>Number of samples (default 200 or "all"):</label>
-    <input type="text" name="nsamp" value="{{nsamp or '200'}}" placeholder="200">
+    <label>Number of samples (default 10000 or "all"):</label>
+    <input type="text" name="nsamp" value="{{nsamp or '10000'}}" placeholder="10000">
   </div>
 
   <input type="submit" value="Generate Plots">
@@ -383,14 +399,14 @@ def index():
     end_date_str=request.form["end_date"]
     inc_str=request.form.get("inclination","random").strip()
     lan_str=request.form.get("lan","random").strip()
-    nsamp_str=request.form.get("nsamp","200").strip()
+    nsamp_str=request.form.get("nsamp","10000").strip()
 
     # parse parameters
     try:
         if nsamp_str.lower()=="all":
             nsamp=None  # Use all samples
         else:
-            nsamp=int(nsamp_str) if nsamp_str else 200
+            nsamp=int(nsamp_str) if nsamp_str else 10000
         override_inc=None if inc_str.lower()=="random" else float(inc_str)
         override_lan=None if lan_str.lower()=="random" else float(lan_str)
     except ValueError as e:
@@ -440,17 +456,20 @@ def index():
 
     myBasis=Basis(params["basis"],params["n_planets"])
 
-    # Get best_idx from FULL posterior
-    df_synth_full=myBasis.to_synth(df)
-    best_original_idx=int(df_synth_full["lnprobability"].idxmax())
-
     # Now create synth from sampled data
     df_synth=myBasis.to_synth(df_sample)
+
+    # Get lnlike for weighting the posteriors
+    lnlike=df_synth["lnprobability"].values
+
+    # Create normalized weights from log-likelihoods
+    weights=np.exp(lnlike-np.max(lnlike))
+    weights=weights/np.sum(weights)
+
     epochs_sep=Time(np.linspace(t_start.mjd,t_end.mjd,40),format="mjd")
     times_sep=epochs_sep.decimalyear
 
     epochs_2d=Time(np.linspace(t_start.mjd,t_end.mjd,100),format="mjd")
-
 
     # Compute RA/DEC seps
     seps,_,_=compute_sep(
@@ -462,18 +481,22 @@ def index():
         override_lan=override_lan
     )
 
-    # Stats
-    med_sep=np.median(seps,axis=1)
-    low_sep=np.percentile(seps,16,axis=1)
-    high_sep=np.percentile(seps,84,axis=1)
+    # Compute weighted statistics
+    med_sep=weighted_percentile(seps,weights,50)
+    low_sep=weighted_percentile(seps,weights,16)
+    high_sep=weighted_percentile(seps,weights,84)
 
-    # Visibility fractions
+    # Visibility fractions w/ weighted percentiles
     IWA=155
     OWA=436
     IWAw=450
     OWAw=1300
-    visible_frac_narrow=np.mean((seps>=IWA)&(seps<=OWA),axis=1)*100
-    visible_frac_wide=np.mean((seps>=IWAw)&(seps<=OWAw),axis=1)*100
+
+    visible_narrow=(seps>=IWA)&(seps<=OWA)
+    visible_wide=(seps>=IWAw)&(seps<=OWAw)
+
+    visible_frac_narrow=np.sum(visible_narrow*weights[None,:],axis=1)/np.sum(weights)*100
+    visible_frac_wide=np.sum(visible_wide*weights[None,:],axis=1)/np.sum(weights)*100
 
     # compute 2d ra/dec plot
     seps_2d,raoff_2d,deoff_2d=compute_sep(
@@ -485,7 +508,7 @@ def index():
         override_lan=override_lan
     )
 
-    # plane of sky computation
+    # plane of sky
     seps_2d_sky,raoff_2d_sky,deoff_2d_sky=compute_sep_skyplane(
         df_synth,epochs_2d,
         params["basis"],params["m0"],params["m0_err"],
@@ -493,13 +516,6 @@ def index():
         params["n_planets"],params["pl_num"],
         override_inc=override_inc
     )
-
-    # Find where best_original_idx appears in our sampled df_synth
-    if best_original_idx in df_synth.index:
-        best_idx=df_synth.index.get_loc(best_original_idx)
-    else:
-        # If best isn't in sample, use the best from the sample
-        best_idx=df_synth["lnprobability"].argmax()
 
     # =========================================
     # CREATE PLOT WITH PLASMA COLORS (4 subplots)
@@ -512,10 +528,6 @@ def index():
     c_iwa_narrow=cm(0.85)  # bright yellow-orange
     c_iwa_wide=cm(0.5)  # magenta
     c_orbit_light=cm(0.2)  # dark purple
-    c_orbit_best=cm(0.95)  # bright yellow
-    c_timestamp=cm(0.0)  # dark purple/blue
-    c_start=cm(0.7)  # orange
-    c_end=cm(0.3)  # purple
     c_star=cm(0.0)  # dark purple/blue
     c_median=cm(0.6)  # orange
     c_fill=cm(0.2)  # dark purple
@@ -541,37 +553,25 @@ def index():
     for i in sample_indices:
         ax1.plot(raoff_2d[:,i],deoff_2d[:,i],'-',color=c_orbit_light,alpha=0.3,linewidth=0.5)
 
-    ax1.plot(raoff_2d[:,best_idx],deoff_2d[:,best_idx],'-',color=c_orbit_light,linewidth=5,label='Best-fit orbit',
-             zorder=10)
-
-    timestamp_dates=['2027-01-01','2027-06-01','2028-01-01','2030-01-01']
-    timestamp_epochs=Time(timestamp_dates,format='iso')
-    ra_interp=interp1d(epochs_2d.mjd,raoff_2d[:,best_idx],kind='cubic',fill_value='extrapolate')
-    de_interp=interp1d(epochs_2d.mjd,deoff_2d[:,best_idx],kind='cubic',fill_value='extrapolate')
-    raoff_ts=ra_interp(timestamp_epochs.mjd)
-    deoff_ts=de_interp(timestamp_epochs.mjd)
-
-    for i,date in enumerate(timestamp_dates):
-        ax1.plot(raoff_ts[i],deoff_ts[i],'o',color=c_timestamp,markersize=10,zorder=13)
-        ax1.annotate(date,xy=(raoff_ts[i],deoff_ts[i]),xytext=(10,10),textcoords='offset points',
-                     fontsize=10,color=c_timestamp,bbox=dict(boxstyle='round,pad=0.3',facecolor='white',alpha=0.7),
-                     zorder=14)
-
-    ax1.plot(raoff_2d[0,best_idx],deoff_2d[0,best_idx],'o',color=c_start,markersize=12,
-             label=f'Start ({start_date_str})',zorder=12)
-    ax1.plot(raoff_2d[-1,best_idx],deoff_2d[-1,best_idx],'o',color=c_end,markersize=12,label=f'End ({end_date_str})',
-             zorder=12)
     ax1.plot(0,0,'*',color=c_star,markersize=20,label='Star',zorder=15)
 
     ax1.set_aspect('equal')
     ax1.tick_params(axis='both',which='major',labelsize=12)
+    ax1.legend(loc='best',fontsize=10)
 
     # PLOT 4: sky plane orbit
     ax4=fig.add_subplot(gs[:,1])
     title_sky=f"{display_names[planet]}: Sky-Plane Orbit (i={'random' if override_inc is None else f'{override_inc}°'})"
     ax4.set_title(title_sky,fontsize=14)
-    ax4.set_xlabel("Plane of sky offset [mas]",fontsize=14)
-    ax4.set_ylabel("Orbit plane offset [mas]",fontsize=14)
+
+    if override_inc is None:
+        # Random ionc
+        ax4.set_xlabel("Plane of sky offset [mas]",fontsize=14)
+        ax4.set_ylabel("Offset in orbit plane [mas]",fontsize=14)
+    else:
+        # Specific
+        ax4.set_xlabel("Projected separation along line of nodes [mas]",fontsize=14)
+        ax4.set_ylabel("Projected separation perpendicular to line of nodes [mas]",fontsize=14)
 
     # IWA/OWA lines
     ax4.axvline(IWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
@@ -586,27 +586,6 @@ def index():
         ax4.plot(raoff_2d_sky[:,i],deoff_2d_sky[:,i],'-',color=c_orbit_light,
                  alpha=0.3,linewidth=0.5)
 
-    ax4.plot(raoff_2d_sky[:,best_idx],deoff_2d_sky[:,best_idx],'-',
-             color=c_orbit_light,linewidth=5,zorder=10)
-
-    # Timestamps
-    ts_dates=['2027-01-01','2027-06-01','2028-06-01','2029-01-01']
-    ts_epochs=Time(ts_dates,format='iso')
-    ra_interp_sky=interp1d(epochs_2d.mjd,raoff_2d_sky[:,best_idx],kind='cubic',fill_value='extrapolate')
-    de_interp_sky=interp1d(epochs_2d.mjd,deoff_2d_sky[:,best_idx],kind='cubic',fill_value='extrapolate')
-    ra_ts_sky=ra_interp_sky(ts_epochs.mjd)
-    de_ts_sky=de_interp_sky(ts_epochs.mjd)
-
-    for i,date in enumerate(ts_dates):
-        ax4.plot(ra_ts_sky[i],de_ts_sky[i],'o',color=c_timestamp,markersize=10,zorder=13)
-        ax4.annotate(date,xy=(ra_ts_sky[i],de_ts_sky[i]),xytext=(10,10),
-                     textcoords='offset points',fontsize=10,color=c_timestamp,
-                     bbox=dict(boxstyle='round',facecolor='white',alpha=0.7),zorder=14)
-
-    ax4.plot(raoff_2d_sky[0,best_idx],deoff_2d_sky[0,best_idx],'o',
-             color=c_start,markersize=12,zorder=12)
-    ax4.plot(raoff_2d_sky[-1,best_idx],deoff_2d_sky[-1,best_idx],'o',
-             color=c_end,markersize=12,zorder=12)
     ax4.plot(0,0,'*',color=c_star,markersize=20,zorder=15)
 
     ax4.set_aspect('equal')
