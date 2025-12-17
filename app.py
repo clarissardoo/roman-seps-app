@@ -576,7 +576,7 @@ def index():
     # For "unknown": RA/Dec uses random cos(i), sky-plane uses face-on
     if override_inc=="unknown":
         override_inc_for_compute=None  # Random cos(i) for RA/Dec and visibility
-        override_inc_for_skyplane=1.5  # Near face-on for sky-plane plot only
+        override_inc_for_skyplane=0.01  # Near face-on for sky-plane plot only
     else:
         # Numerical value - use same for both
         override_inc_for_compute=override_inc
@@ -724,10 +724,10 @@ def index():
     ra_min,ra_max=np.min(raoff_2d),np.max(raoff_2d)
     dec_min,dec_max=np.min(deoff_2d),np.max(deoff_2d)
 
-    # Add 20% padding
+    # Add 30% padding
     ra_range=ra_max-ra_min
     dec_range=dec_max-dec_min
-    padding=0.2
+    padding=0.3
 
     ax1.set_xlim(ra_min-padding*ra_range,ra_max+padding*ra_range)
     ax1.set_ylim(dec_min-padding*dec_range,dec_max+padding*dec_range)
@@ -740,7 +740,7 @@ def index():
     ax4=fig.add_subplot(gs[:,1])
     title_sky=f"{display_names[planet]}: Sky-Plane Orbit (i={inc_display})"
     if override_inc=="unknown":
-        title_sky+="\nNote: Near face-on view (i≈1.5°) - larger than projected separation above"
+        title_sky+="\nNote: Near face-on view (i≈0.1°) - larger than projected separation above"
     ax4.set_title(title_sky,fontsize=14)
 
     # Determine plot style based on inclination type
