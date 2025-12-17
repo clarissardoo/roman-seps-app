@@ -90,8 +90,10 @@ def compute_sep(
     )
 
     if override_inc is not None:
+        # Numerical value provided
         inc=np.full(chain_len,np.radians(override_inc))
     else:
+        # None - use random cos(i) sampling
         cosi=(2.*np.random.random(size=chain_len))-1.
         inc=np.arccos(cosi)
 
@@ -111,14 +113,106 @@ def compute_sep(
     tau=tp_to_tau(tp_mjd,tau_ref_epoch,period_yr)
 
     # compute projected separation in mas
-    raoff,deoff,_=calc_orbit(
+    raoff,deoff,vz=calc_orbit(
         epochs.mjd,sma,ecc,inc,
         omega_pl_rad,lan,tau,
         parallax,mtot,tau_ref_epoch=tau_ref_epoch
     )
     seps=np.sqrt(raoff**2+deoff**2)
 
-    return seps,raoff,deoff
+    # Compute 3D positions for phase angle calculation
+    n_epochs=len(epochs)
+    x_mas=np.zeros((n_epochs,chain_len))
+    y_mas=np.zeros((n_epochs,chain_len))
+    z_mas=np.zeros((n_epochs,chain_len))
+
+    # Thiele-Innes constants
+    A=sma*(np.cos(omega_pl_rad)*np.cos(lan)-np.sin(omega_pl_rad)*np.sin(lan)*np.cos(inc))
+    B=sma*(np.cos(omega_pl_rad)*np.sin(lan)+np.sin(omega_pl_rad)*np.cos(lan)*np.cos(inc))
+    F=sma*(-np.sin(omega_pl_rad)*np.cos(lan)-np.cos(omega_pl_rad)*np.sin(lan)*np.cos(inc))
+    G=sma*(-np.sin(omega_pl_rad)*np.sin(lan)+np.cos(omega_pl_rad)*np.cos(lan)*np.cos(inc))
+    C=sma*np.sin(omega_pl_rad)*np.sin(inc)
+    H=sma*np.cos(omega_pl_rad)*np.sin(inc)
+
+    for i in range(n_epochs):
+        # Mean anomaly
+        n_motion=2*np.pi/per_day
+        M=n_motion*(epochs.mjd[i]-tp_mjd)
+
+        # Eccentric anomaly
+        EA=M+ecc*np.sin(M)+ecc**2*np.sin(2*M)/2
+        for _ in range(20):
+            err=EA-ecc*np.sin(EA)-M
+            if np.all(np.abs(err)<1e-15):
+                break
+            EA=EA-err/(1-ecc*np.cos(EA))
+
+        # Position in orbital plane
+        X=np.cos(EA)-ecc
+        Y=np.sqrt(1-ecc**2)*np.sin(EA)
+
+        # 3D position in AU
+        x_au=(B*X+G*Y)
+        y_au=(A*X+F*Y)
+        z_au=(C*X+H*Y)
+
+        # Convert to mas
+        x_mas[i,:]=x_au*parallax
+        y_mas[i,:]=y_au*parallax
+        z_mas[i,:]=z_au*parallax
+
+    # 3D orbital radius
+    r_mas=np.sqrt(x_mas**2+y_mas**2+z_mas**2)
+
+    return seps,raoff,deoff,z_mas,r_mas
+
+
+def weighted_std(data,weights):
+    """Compute weighted standard deviation along axis 1"""
+    if data.ndim==1:
+        mean=np.average(data,weights=weights)
+        variance=np.average((data-mean)**2,weights=weights)
+        return np.sqrt(variance)
+    else:
+        mean=np.average(data,axis=1,weights=weights)
+        variance=np.average((data-mean[:,np.newaxis])**2,axis=1,weights=weights)
+        return np.sqrt(variance)
+
+
+def get_median_orbit_indices(raoff_2d,deoff_2d,weights):
+    """
+    Find the orbit sample closest to the weighted median trajectory.
+    Returns the index of that sample.
+    """
+    # Compute weighted median RA and Dec at each epoch
+    med_ra=np.zeros(raoff_2d.shape[0])
+    med_dec=np.zeros(raoff_2d.shape[0])
+
+    for i in range(raoff_2d.shape[0]):
+        # Weighted median for RA
+        sorted_idx_ra=np.argsort(raoff_2d[i,:])
+        sorted_weights_ra=weights[sorted_idx_ra]
+        cumsum_ra=np.cumsum(sorted_weights_ra)
+        median_idx_ra=np.searchsorted(cumsum_ra,0.5)
+        if median_idx_ra>=len(sorted_idx_ra):
+            median_idx_ra=len(sorted_idx_ra)-1
+        med_ra[i]=raoff_2d[i,sorted_idx_ra[median_idx_ra]]
+
+        # Weighted median for Dec
+        sorted_idx_dec=np.argsort(deoff_2d[i,:])
+        sorted_weights_dec=weights[sorted_idx_dec]
+        cumsum_dec=np.cumsum(sorted_weights_dec)
+        median_idx_dec=np.searchsorted(cumsum_dec,0.5)
+        if median_idx_dec>=len(sorted_idx_dec):
+            median_idx_dec=len(sorted_idx_dec)-1
+        med_dec[i]=deoff_2d[i,sorted_idx_dec[median_idx_dec]]
+
+    # Find the orbit that has minimum distance to this median trajectory
+    distances=np.zeros(raoff_2d.shape[1])
+    for j in range(raoff_2d.shape[1]):
+        distances[j]=np.sum(np.sqrt((raoff_2d[:,j]-med_ra)**2+(deoff_2d[:,j]-med_dec)**2))
+
+    return np.argmin(distances)
 
 
 def compute_sep_skyplane(
@@ -151,6 +245,7 @@ def compute_sep_skyplane(
         cosi=2*np.random.rand(chain_len)-1
         inc=np.arccos(cosi)
     else:
+        # Numerical value (could be 1.0 for "unknown" case or user-specified)
         inc=np.full(chain_len,np.radians(override_inc))
 
     # Semi-major axis
@@ -353,8 +448,8 @@ HTML="""
   </div>
 
   <div class="form-group">
-    <label>Inclination (degrees or "random"):</label>
-    <input type="text" name="inclination" value="{{inclination or 'random'}}" placeholder="random">
+    <label>Inclination (degrees or "unknown"):</label>
+    <input type="text" name="inclination" value="{{inclination or 'unknown'}}" placeholder="unknown">
   </div>
 
   <div class="form-group">
@@ -407,7 +502,13 @@ def index():
             nsamp=None  # Use all samples
         else:
             nsamp=int(nsamp_str) if nsamp_str else 10000
-        override_inc=None if inc_str.lower()=="random" else float(inc_str)
+
+        # Handle inclination: "unknown" or numerical value
+        if inc_str.lower()=="unknown":
+            override_inc="unknown"  # Store as string
+        else:
+            override_inc=float(inc_str)  # Store as number
+
         override_lan=None if lan_str.lower()=="random" else float(lan_str)
     except ValueError as e:
         return render_template_string(
@@ -471,13 +572,23 @@ def index():
 
     epochs_2d=Time(np.linspace(t_start.mjd,t_end.mjd,100),format="mjd")
 
+    # Prepare override_inc for compute_sep and sky-plane
+    # For "unknown": PLOT 1 uses random cos(i), PLOT 4 uses face-on (~1 degree)
+    if override_inc=="unknown":
+        override_inc_for_compute=None  # Random cos(i) for RA/Dec plot
+        override_inc_for_skyplane=0.1  # Near face-on for sky-plane plot
+    else:
+        # Numerical value - use same for both
+        override_inc_for_compute=override_inc
+        override_inc_for_skyplane=override_inc
+
     # Compute RA/DEC seps
-    seps,_,_=compute_sep(
+    seps,_,_,z_mas,r_mas=compute_sep(
         df_sample,epochs_sep,
         params["basis"],params["m0"],params["m0_err"],
         params["plx"],params["plx_err"],
         params["n_planets"],params["pl_num"],
-        override_inc=override_inc,
+        override_inc=override_inc_for_compute,
         override_lan=override_lan
     )
 
@@ -498,13 +609,29 @@ def index():
     visible_frac_narrow=np.sum(visible_narrow*weights[None,:],axis=1)/np.sum(weights)*100
     visible_frac_wide=np.sum(visible_wide*weights[None,:],axis=1)/np.sum(weights)*100
 
+    # Phase angle calculations
+    phase_angle_rad=np.arccos(np.clip(z_mas/r_mas,-1,1))  # Clip to handle numerical errors
+    phase_angle_deg=np.degrees(phase_angle_rad)
+
+    # Lambert phase function
+    lambert_phase=(np.sin(phase_angle_rad)+(np.pi-phase_angle_rad)*np.cos(phase_angle_rad))/np.pi
+
+    # Compute weighted statistics for phase angles
+    med_phase=weighted_percentile(phase_angle_deg,weights,50)
+    low_phase=weighted_percentile(phase_angle_deg,weights,16)
+    high_phase=weighted_percentile(phase_angle_deg,weights,84)
+
+    med_lambert=weighted_percentile(lambert_phase,weights,50)
+    low_lambert=weighted_percentile(lambert_phase,weights,16)
+    high_lambert=weighted_percentile(lambert_phase,weights,84)
+
     # compute 2d ra/dec plot
-    seps_2d,raoff_2d,deoff_2d=compute_sep(
+    seps_2d,raoff_2d,deoff_2d,z_mas_2d,r_mas_2d=compute_sep(
         df_synth,epochs_2d,
         params["basis"],params["m0"],params["m0_err"],
         params["plx"],params["plx_err"],
         params["n_planets"],params["pl_num"],
-        override_inc=override_inc,
+        override_inc=override_inc_for_compute,
         override_lan=override_lan
     )
 
@@ -514,14 +641,14 @@ def index():
         params["basis"],params["m0"],params["m0_err"],
         params["plx"],params["plx_err"],
         params["n_planets"],params["pl_num"],
-        override_inc=override_inc
+        override_inc=override_inc_for_skyplane  # Use skyplane-specific inclination
     )
 
     # =========================================
-    # CREATE PLOT WITH PLASMA COLORS (4 subplots)
+    # CREATE PLOT WITH PLASMA COLORS (5 subplots)
     # =========================================
-    fig=plt.figure(figsize=(28,8))
-    gs=fig.add_gridspec(2,4,height_ratios=[1,0.5],width_ratios=[1.2,1.2,1,1],hspace=0.3,wspace=0.3)
+    fig=plt.figure(figsize=(32,12))
+    gs=fig.add_gridspec(3,4,height_ratios=[1.2,0.5,0.5],width_ratios=[1.2,1.2,1,1],hspace=0.35,wspace=0.35)
 
     # Plasma colormap colors
     cm=plt.cm.plasma
@@ -535,7 +662,8 @@ def index():
 
     # PLOT 1: 2D ORBIT (ra/dec)
     ax1=fig.add_subplot(gs[:,0])
-    title_2d=f"{display_names[planet]}: Orbital Trajectory (i={'random' if override_inc is None else f'{override_inc}°'}"
+    inc_display='unknown' if override_inc=='unknown' else f'{override_inc}°'
+    title_2d=f"{display_names[planet]}: Orbital Trajectory (i={inc_display}"
     if override_lan is not None:
         title_2d+=f", Ω={override_lan}°)"
     else:
@@ -553,6 +681,41 @@ def index():
     for i in sample_indices:
         ax1.plot(raoff_2d[:,i],deoff_2d[:,i],'-',color=c_orbit_light,alpha=0.3,linewidth=0.5)
 
+    # Add highlighted median orbit with date markers
+    median_idx_radec=get_median_orbit_indices(raoff_2d,deoff_2d,weights)
+
+    # Plot the median orbit in bright color
+    ax1.plot(raoff_2d[:,median_idx_radec],deoff_2d[:,median_idx_radec],'-',
+             color=c_median,linewidth=3,alpha=0.9,zorder=10,label='Median orbit')
+
+    # Add date markers at specific dates
+    marker_dates=['2027-01-01','2027-06-01','2028-06-01','2029-01-01']
+    marker_times=Time(marker_dates)
+
+    # Find indices in epochs_2d closest to marker dates
+    for marker_time,marker_date_str in zip(marker_times,marker_dates):
+        # Find closest epoch
+        time_diffs=np.abs(epochs_2d.mjd-marker_time.mjd)
+        closest_idx=np.argmin(time_diffs)
+
+        # Get position
+        ra_pos=raoff_2d[closest_idx,median_idx_radec]
+        dec_pos=deoff_2d[closest_idx,median_idx_radec]
+
+        # Plot marker
+        ax1.plot(ra_pos,dec_pos,'o',color='cyan',markersize=10,
+                 markeredgecolor='white',markeredgewidth=2,zorder=12)
+
+        # Add text label with date
+        ax1.annotate(marker_date_str,
+                     xy=(ra_pos,dec_pos),
+                     xytext=(10,10),textcoords='offset points',
+                     fontsize=10,fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.5',facecolor='white',
+                               edgecolor='cyan',alpha=0.9),
+                     arrowprops=dict(arrowstyle='->',color='cyan',lw=2),
+                     zorder=13)
+
     ax1.plot(0,0,'*',color=c_star,markersize=20,label='Star',zorder=15)
 
     ax1.set_aspect('equal')
@@ -561,23 +724,89 @@ def index():
 
     # PLOT 4: sky plane orbit
     ax4=fig.add_subplot(gs[:,1])
-    title_sky=f"{display_names[planet]}: Sky-Plane Orbit (i={'random' if override_inc is None else f'{override_inc}°'})"
+    title_sky=f"{display_names[planet]}: Sky-Plane Orbit (i={inc_display})"
     ax4.set_title(title_sky,fontsize=14)
 
-    if override_inc is None:
-        # Random ionc
+    # Add background shading to indicate illumination regions
+    # Upper half (Y > 0): Favorable illumination (phase < 90°, planet behind star)
+    # Lower half (Y < 0): Unfavorable illumination (phase > 90°, planet in front of star)
+    ylims=ax4.get_ylim() if hasattr(ax4,'dataLim') else [-600,600]
+
+    # Determine plot style based on inclination type
+    if override_inc=="unknown":
+        # Unknown inclination: use vertical lines (face-on view for orbit, i ≈ 0.1°)
         ax4.set_xlabel("Plane of sky offset [mas]",fontsize=14)
         ax4.set_ylabel("Offset in orbit plane [mas]",fontsize=14)
+
+        # Set limits first for shading
+        if planet=="eps_Eri":
+            ax4.set_xlim(-1300,1300)
+            ax4.set_ylim(-1300,1300)
+            ylims=[-1300,1300]
+        else:
+            ax4.set_xlim(-500,500)
+            ax4.set_ylim(-500,500)
+            ylims=[-500,500]
+
+        # Background shading
+        ax4.axhspan(0,ylims[1],alpha=0.08,color='green',zorder=0,
+                   )
+        ax4.axhspan(ylims[0],0,alpha=0.08,color='red',zorder=0,
+                    )
+
+        # Add text labels
+        y_pos=ylims[1]*0.85
+        ax4.text(0,y_pos,'Behind star\n(phase < 90°)\nFavorable',
+                 ha='center',va='top',fontsize=11,fontweight='bold',
+                 bbox=dict(boxstyle='round,pad=0.5',facecolor='lightgreen',
+                           edgecolor='darkgreen',alpha=0.7))
+        ax4.text(0,-y_pos,'In front of star\n(phase > 90°)\nUnfavorable',
+                 ha='center',va='bottom',fontsize=11,fontweight='bold',
+                 bbox=dict(boxstyle='round,pad=0.5',facecolor='lightcoral',
+                           edgecolor='darkred',alpha=0.7))
+
+        # IWA/OWA vertical lines
+        ax4.axvline(IWA,color=c_iwa_narrow,linestyle='--',linewidth=4,label='IWA/OWA (Narrow)')
+        ax4.axvline(-IWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
+        ax4.axvline(OWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
+        ax4.axvline(-OWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
+
     else:
-        # Specific
+        # Specific inclination: use circles
         ax4.set_xlabel("Projected separation along line of nodes [mas]",fontsize=14)
         ax4.set_ylabel("Projected separation perpendicular to line of nodes [mas]",fontsize=14)
 
-    # IWA/OWA lines
-    ax4.axvline(IWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
-    ax4.axvline(-IWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
-    ax4.axvline(OWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
-    ax4.axvline(-OWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
+        # Set limits first for shading
+        if planet=="eps_Eri":
+            ax4.set_xlim(-1300,1300)
+            ax4.set_ylim(-1300,1300)
+            ylims=[-1300,1300]
+        else:
+            ax4.set_xlim(-500,500)
+            ax4.set_ylim(-500,500)
+            ylims=[-500,500]
+
+        # Background shading
+        ax4.axhspan(0,ylims[1],alpha=0.08,color='green',zorder=0,
+                    )
+        ax4.axhspan(ylims[0],0,alpha=0.08,color='red',zorder=0,
+                   )
+
+        # Add text labels
+        y_pos=ylims[1]*0.85
+        ax4.text(0,y_pos,'Behind star\n(phase < 90°)\nFavorable',
+                 ha='center',va='top',fontsize=11,fontweight='bold',
+                 bbox=dict(boxstyle='round,pad=0.5',facecolor='lightgreen',
+                           edgecolor='darkgreen',alpha=0.7))
+        ax4.text(0,-y_pos,'In front of star\n(phase > 90°)\nUnfavorable',
+                 ha='center',va='bottom',fontsize=11,fontweight='bold',
+                 bbox=dict(boxstyle='round,pad=0.5',facecolor='lightcoral',
+                           edgecolor='darkred',alpha=0.7))
+
+        # IWA/OWA circles
+        theta=np.linspace(0,2*np.pi,100)
+        ax4.plot(IWA*np.cos(theta),IWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--',label='IWA/OWA (Narrow)')
+        ax4.plot(OWA*np.cos(theta),OWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--')
 
     # Plot sample orbits
     n_samples_sky=min(100,raoff_2d_sky.shape[1])
@@ -586,18 +815,46 @@ def index():
         ax4.plot(raoff_2d_sky[:,i],deoff_2d_sky[:,i],'-',color=c_orbit_light,
                  alpha=0.3,linewidth=0.5)
 
-    ax4.plot(0,0,'*',color=c_star,markersize=20,zorder=15)
+    # Add highlighted median orbit with date markers
+    median_idx=get_median_orbit_indices(raoff_2d_sky,deoff_2d_sky,weights)
+
+    # Plot the median orbit in bright color
+    ax4.plot(raoff_2d_sky[:,median_idx],deoff_2d_sky[:,median_idx],'-',
+             color=c_median,linewidth=3,alpha=0.9,zorder=10,label='Median orbit')
+
+    # Add date markers at specific dates
+    marker_dates=['2027-01-01','2027-06-01','2028-06-01','2029-01-01']
+    marker_times=Time(marker_dates)
+
+    # Find indices in epochs_2d closest to marker dates
+    for marker_time,marker_date_str in zip(marker_times,marker_dates):
+        # Find closest epoch
+        time_diffs=np.abs(epochs_2d.mjd-marker_time.mjd)
+        closest_idx=np.argmin(time_diffs)
+
+        # Get position
+        ra_pos=raoff_2d_sky[closest_idx,median_idx]
+        dec_pos=deoff_2d_sky[closest_idx,median_idx]
+
+        # Plot marker
+        ax4.plot(ra_pos,dec_pos,'o',color='cyan',markersize=10,
+                 markeredgecolor='white',markeredgewidth=2,zorder=12)
+
+        # Add text label with date
+        ax4.annotate(marker_date_str,
+                     xy=(ra_pos,dec_pos),
+                     xytext=(10,10),textcoords='offset points',
+                     fontsize=10,fontweight='bold',
+                     bbox=dict(boxstyle='round,pad=0.5',facecolor='white',
+                               edgecolor='cyan',alpha=0.9),
+                     arrowprops=dict(arrowstyle='->',color='cyan',lw=2),
+                     zorder=13)
+
+    ax4.plot(0,0,'*',color=c_star,markersize=20,label='Star',zorder=15)
 
     ax4.set_aspect('equal')
     ax4.tick_params(axis='both',which='major',labelsize=12)
-
-    # Set axis limits - special case for eps_Eri
-    if planet=="eps_Eri":
-        ax4.set_xlim(-1300,1300)
-        ax4.set_ylim(-1300,1300)
-    else:
-        ax4.set_xlim(-500,500)
-        ax4.set_ylim(-500,500)
+    ax4.legend(loc='best',fontsize=10)
 
     # Plot 2 - sep vs time - using RA/Dec calculations!
     ax2=fig.add_subplot(gs[0,2:])
@@ -639,6 +896,33 @@ def index():
 
     ax3.set_ylim([0,100])
     ax3.legend(loc='best',fontsize=10)
+
+    # Plot 5 - phase angle
+    ax5=fig.add_subplot(gs[2,2:],sharex=ax2)
+    ax5.set_title("Phase Angle & Lambert Phase",fontsize=14)
+    ax5.set_xlabel("Year",fontsize=14)
+    ax5.set_ylabel("Phase Angle [°]",fontsize=14,color=c_median)
+    ax5.tick_params(axis='both',which='major',labelsize=12)
+    ax5.tick_params(axis='y',labelcolor=c_median)
+
+    # Phase angle on left y-axis
+    ax5.plot(times_sep,med_phase,color=c_median,linewidth=2,marker='o',markersize=4,
+             label='Phase Angle (median)')
+    ax5.fill_between(times_sep,low_phase,high_phase,color=c_median,alpha=0.2)
+
+    # Lambert phase on right y-axis
+    ax5_right=ax5.twinx()
+    ax5_right.set_ylabel("Lambert Phase Function",fontsize=14,color=c_iwa_wide)
+    ax5_right.tick_params(axis='y',labelcolor=c_iwa_wide)
+    ax5_right.plot(times_sep,med_lambert,color=c_iwa_wide,linewidth=2,marker='s',markersize=4,
+                   label='Lambert Phase (median)')
+    ax5_right.fill_between(times_sep,low_lambert,high_lambert,color=c_iwa_wide,alpha=0.2)
+    ax5_right.set_ylim([0,1])
+
+    # Combine legends
+    lines1,labels1=ax5.get_legend_handles_labels()
+    lines2,labels2=ax5_right.get_legend_handles_labels()
+    ax5.legend(lines1+lines2,labels1+labels2,loc='best',fontsize=10)
 
     plt.suptitle(f"{display_names[planet]}: {start_date_str} → {end_date_str}",fontsize=16,y=0.98)
     plt.tight_layout()
