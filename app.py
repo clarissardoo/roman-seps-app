@@ -8,7 +8,12 @@ from orbitize.basis import tp_to_tau
 from orbitize.kepler import calc_orbit
 from astropy import units as u
 import matplotlib
+import matplotlib
 
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from matplotlib.dates import DateFormatter
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -220,10 +225,8 @@ def compute_sep_skyplane(
         n_planets=1,pl_num=1,override_inc=None
 ):
     """
-    Computes sky-plane (non-rotating) projected separation.
-    Uses:
-        X = r cos(f + ω)
-        Y = r sin(f + ω) * cos(i) - collapses Y by inc
+    Computes sky-plane projected separation using Thiele-Innes with Ω=0 to match orbit_getpoints
+    SMA bug fixed.
     """
 
     myBasis=Basis(basis,n_planets)
@@ -240,61 +243,74 @@ def compute_sep_skyplane(
     omega_star=df[f'w{pl_num}'].values
     omega_pl=omega_star+np.pi
 
-    # Inclination
-    if override_inc is None:
-        cosi=2*np.random.rand(chain_len)-1
-        inc=np.arccos(cosi)
-    else:
-        # Numerical value (could be 1.0 for "unknown" case or user-specified)
-        inc=np.full(chain_len,np.radians(override_inc))
-
-    # Semi-major axis
+    # Calculate semi-major axis assuming edge-on (i=90°) - this was the bug btw D:
     period_yr=per_day/365.25
     msini=(
             Msini(semiamp,per_day,m_st,ecc,Msini_units='Earth')
             *(u.M_earth/u.M_sun).to('')
     )
-    m_pl=msini/np.sin(inc)
+    m_pl=msini  # At i=90°, sin(i)=1
     mtot=m_st+m_pl
     sma=(period_yr**2*mtot)**(1/3)
+
+    # Sample inclination
+    if override_inc is None:
+        cosi=2*np.random.rand(chain_len)-1
+        inc=np.arccos(cosi)
+    else:
+        inc=np.full(chain_len,np.radians(override_inc))
 
     # Parallax (mas)
     parallax=np.random.normal(plx,plx_err,size=chain_len)
 
-    # Compute mean anomaly
+    # Thiele-Innes constants with Ω=0
+    omega=np.zeros(chain_len)  # Ω = 0
+    w=omega_pl
+
+    A=sma*(np.cos(w)*np.cos(omega)-np.sin(w)*np.sin(omega)*np.cos(inc))
+    B=sma*(np.cos(w)*np.sin(omega)+np.sin(w)*np.cos(omega)*np.cos(inc))
+    F=sma*(-np.sin(w)*np.cos(omega)-np.cos(w)*np.sin(omega)*np.cos(inc))
+    G=sma*(-np.sin(w)*np.sin(omega)+np.cos(w)*np.cos(omega)*np.cos(inc))
+
+    # Time of periastron
     tp_mjd=df[f'tp{pl_num}'].values-2400000.5
-    n=2*np.pi/per_day
-    t_mjd=epochs.mjd[:,None]
-    M=n*(t_mjd-tp_mjd[None,:])
-    # Solve Kepler equation
-    E=M.copy()
-    for _ in range(7):
-        E=M+ecc[None,:]*np.sin(E)
 
-    # True anomaly f
-    f=2*np.arctan2(
-        np.sqrt(1+ecc)*np.sin(E/2),
-        np.sqrt(1-ecc)*np.cos(E/2)
-    )
+    # Initialize output arrays
+    n_epochs=len(epochs)
+    X_mas=np.zeros((n_epochs,chain_len))
+    Y_mas=np.zeros((n_epochs,chain_len))
 
-    # Radius
-    r=sma[None,:]*(1-ecc[None,:]**2)/(1+ecc[None,:]*np.cos(f))
+    # Calculate positions for each epoch
+    for i in range(n_epochs):
+        # Mean anomaly
+        n_motion=2*np.pi/per_day
+        M=n_motion*(epochs.mjd[i]-tp_mjd)
 
-    # Sky-plane coordinates (Ω removed)
-    theta=f+omega_pl[None,:]
+        # Eccentric anomaly
+        EA=M+ecc*np.sin(M)+ecc**2*np.sin(2*M)/2
+        for _ in range(20):
+            err=EA-ecc*np.sin(EA)-M
+            if np.all(np.abs(err)<1e-15):
+                break
+            EA=EA-err/(1-ecc*np.cos(EA))
 
-    X_au=r*np.cos(theta)
-    Y_au=r*np.sin(theta)*np.cos(inc)[None,:]
+        # Position in orbital plane
+        X=np.cos(EA)-ecc
+        Y=np.sqrt(1-ecc**2)*np.sin(EA)
 
-    # Convert AU → mas
-    X_mas=X_au*parallax[None,:]
-    Y_mas=Y_au*parallax[None,:]
+        # Apply Thiele-Innes transformation
+        xpos_au=B*X+G*Y  # cos(i) factor
+        ypos_au=A*X+F*Y  # stays full size
 
+        # SWAP: X_mas gets the full-size coordinate, Y_mas gets the deprojected one
+        #this keeps top/bottom idea for "favorable" consistent.
+        X_mas[i,:]=ypos_au*parallax  # Full size
+        Y_mas[i,:]=xpos_au*parallax  # Deprojected by cos(i)
+
+    # Calculate separations
     seps=np.sqrt(X_mas**2+Y_mas**2)
 
     return seps,X_mas,Y_mas
-
-
 base_path=Path("orbit_fits")
 
 # Display names for prettier UI
@@ -568,15 +584,23 @@ def index():
     weights=weights/np.sum(weights)
 
     epochs_sep=Time(np.linspace(t_start.mjd,t_end.mjd,40),format="mjd")
-    times_sep=epochs_sep.decimalyear
 
+    # Convert to datetime objects for plotting
+    from datetime import datetime
+    # Convert epochs to decimal year for datetime conversion
+    dates_sep_decimal=epochs_sep.decimalyear
+
+    # Convert to datetime objects for plotting
+    from datetime import datetime
+    dates_sep=[datetime(int(t),1,1)+(datetime(int(t)+1,1,1)-datetime(int(t),1,1))*(t-int(t))
+               for t in dates_sep_decimal]
     epochs_2d=Time(np.linspace(t_start.mjd,t_end.mjd,100),format="mjd")
 
     # Prepare override_inc for compute_sep and sky-plane
     # For "unknown": RA/Dec uses random cos(i), sky-plane uses face-on
     if override_inc=="unknown":
         override_inc_for_compute=None  # Random cos(i) for RA/Dec and visibility
-        override_inc_for_skyplane=0.01  # Near face-on for sky-plane plot only
+        override_inc_for_skyplane=0.01# Near face-on for sky-plane plot only
     else:
         # Numerical value - use same for both
         override_inc_for_compute=override_inc
@@ -677,6 +701,15 @@ def index():
     ax1.plot(IWA*np.cos(theta),IWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--',label='IWA/OWA (Narrow)')
     ax1.plot(OWA*np.cos(theta),OWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--')
 
+    # Check if orbit intersects wide FOV ring and plot if it does
+    max_sep_orbit=np.max(seps_2d)
+    min_sep_orbit=np.min(seps_2d)
+
+    # Plot wide FOV rings if orbit passes through that region
+    if max_sep_orbit>=IWAw and min_sep_orbit<=OWAw:
+        ax1.plot(IWAw*np.cos(theta),IWAw*np.sin(theta),color=c_iwa_wide,lw=4,linestyle='--',label='IWA/OWA (Wide)')
+        ax1.plot(OWAw*np.cos(theta),OWAw*np.sin(theta),color=c_iwa_wide,lw=4,linestyle='--')
+
     n_samples=min(100,raoff_2d.shape[1])
     sample_indices=np.random.choice(raoff_2d.shape[1],n_samples,replace=False)
     for i in sample_indices:
@@ -738,7 +771,7 @@ def index():
 
     # PLOT 4: sky plane orbit
     ax4=fig.add_subplot(gs[:,1])
-    title_sky=f"{display_names[planet]}: Sky-Plane Orbit (i={inc_display})"
+    title_sky=f"{display_names[planet]}: Orbital Plane View (i={inc_display})"
     if override_inc=="unknown":
         title_sky+="\nNote: Near face-on view (i≈0.01°)\nlarger than projected separation above"
     ax4.set_title(title_sky,fontsize=18)
@@ -746,8 +779,8 @@ def index():
     # Determine plot style based on inclination type
     if override_inc=="unknown":
         # Unknown inclination: use vertical lines (face-on view for orbit, i ≈ 1.5°)
-        ax4.set_xlabel("Plane of sky offset [mas]",fontsize=18)
-        ax4.set_ylabel("Offset in orbit plane [mas]",fontsize=18)
+        ax4.set_xlabel("Sky-plane offset along line of nodes [mas]",fontsize=18)
+        ax4.set_ylabel("Offset perpendicular to line of nodes (in orbit plane) [mas]",fontsize=18)
 
         # Background shading (NO TEXT) - will be set after we determine limits
         # IWA/OWA vertical lines
@@ -823,6 +856,14 @@ def index():
     ax4.axhspan(0,ylims[1],alpha=0.05,color='green',zorder=0)
     ax4.axhspan(ylims[0],0,alpha=0.05,color='red',zorder=0)
 
+    # Add text labels for favorable/unfavorable regions
+    ax4.text(0,ylims[1]*0.45,'Favorable - high illumination phase',
+             ha='center',va='center',fontsize=12,color='darkgreen',
+             alpha=0.7,fontweight='bold',style='italic')
+    ax4.text(0,ylims[0]*0.45,'Unfavorable - low illumination phase',
+             ha='center',va='center',fontsize=12,color='darkred',
+             alpha=0.7,fontweight='bold',style='italic')
+
     ax4.set_aspect('equal')
     ax4.tick_params(axis='both',which='major',labelsize=14)
     ax4.legend(loc='best',fontsize=12)
@@ -839,13 +880,13 @@ def index():
     ax2.set_ylabel("Separation [mas]",fontsize=14)
     ax2.tick_params(axis='both',which='major',labelsize=12)
 
-    ax2.plot(times_sep,med_sep,'-',color=c_median,linewidth=2,label='Median separation',marker='o',markersize=3)
-    ax2.fill_between(times_sep,low_sep,high_sep,color=c_fill,alpha=0.5,label='1σ interval')
+    ax2.plot(dates_sep,med_sep,'-',color=c_median,linewidth=2,label='Median separation',marker='o',markersize=3)
+    ax2.fill_between(dates_sep,low_sep,high_sep,color=c_fill,alpha=0.5,label='1σ interval')
 
     n_plot=min(20,seps.shape[1])
     idxs=np.random.choice(seps.shape[1],n_plot,replace=False)
     for i in idxs:
-        ax2.plot(times_sep,seps[:,i],color=c_samples,linewidth=1,alpha=0.15)
+        ax2.plot(dates_sep,seps[:,i],color=c_samples,linewidth=1,alpha=0.15)
 
     # Always plot IWA/OWA narrow
     ax2.axhline(y=IWA,color=c_iwa_narrow,linestyle='--',linewidth=3,label='IWA/OWA (Narrow)')
@@ -882,16 +923,16 @@ def index():
 
     vis_title=f"Visibility Fraction\nNarrow: {min_vis_narrow:.1f}%-{max_vis_narrow:.1f}% | Wide: {min_vis_wide:.1f}%-{max_vis_wide:.1f}%"
     ax3.set_title(vis_title,fontsize=14)
-    ax3.set_xlabel("Year",fontsize=14)
+    ax3.set_xlabel("Date (MM/YY)",fontsize=14)
     ax3.set_ylabel("Visible [%]",fontsize=14)
     ax3.tick_params(axis='both',which='major',labelsize=12)
 
-    ax3.plot(times_sep,visible_frac_narrow,color=c_iwa_narrow,linewidth=2,marker='o',markersize=3,
+    ax3.plot(dates_sep,visible_frac_narrow,color=c_iwa_narrow,linewidth=2,marker='o',markersize=3,
              label='Narrow (155-436 mas)')
-    ax3.fill_between(times_sep,0,visible_frac_narrow,color=c_iwa_narrow,alpha=0.2)
-    ax3.plot(times_sep,visible_frac_wide,color=c_iwa_wide,linewidth=2,marker='s',markersize=3,
+    ax3.fill_between(dates_sep,0,visible_frac_narrow,color=c_iwa_narrow,alpha=0.2)
+    ax3.plot(dates_sep,visible_frac_wide,color=c_iwa_wide,linewidth=2,marker='s',markersize=3,
              label='Wide (450-1300 mas)')
-    ax3.fill_between(times_sep,0,visible_frac_wide,color=c_iwa_wide,alpha=0.2)
+    ax3.fill_between(dates_sep,0,visible_frac_wide,color=c_iwa_wide,alpha=0.2)
 
     ax3.set_ylim([0,100])
     ax3.legend(loc='best',fontsize=11)
@@ -899,23 +940,23 @@ def index():
     # Plot 5 - phase angle
     ax5=fig.add_subplot(gs[2,2:4],sharex=ax2)
     ax5.set_title("Phase Angle & Lambert Phase",fontsize=14)
-    ax5.set_xlabel("Year",fontsize=14)
+    ax5.set_xlabel("Date (MM/YY)",fontsize=14)
     ax5.set_ylabel("Phase Angle [°]",fontsize=14,color=c_median)
     ax5.tick_params(axis='both',which='major',labelsize=12)
     ax5.tick_params(axis='y',labelcolor=c_median)
 
     # Phase angle on left y-axis
-    ax5.plot(times_sep,med_phase,color=c_median,linewidth=2,marker='o',markersize=3,
+    ax5.plot(dates_sep,med_phase,color=c_median,linewidth=2,marker='o',markersize=3,
              label='Phase Angle (median)')
-    ax5.fill_between(times_sep,low_phase,high_phase,color=c_median,alpha=0.2)
+    ax5.fill_between(dates_sep,low_phase,high_phase,color=c_median,alpha=0.2)
 
     # Lambert phase on right y-axis
     ax5_right=ax5.twinx()
     ax5_right.set_ylabel("Lambert Phase Function",fontsize=14,color=c_iwa_wide)
     ax5_right.tick_params(axis='y',labelcolor=c_iwa_wide,labelsize=12)
-    ax5_right.plot(times_sep,med_lambert,color=c_iwa_wide,linewidth=2,marker='s',markersize=3,
+    ax5_right.plot(dates_sep,med_lambert,color=c_iwa_wide,linewidth=2,marker='s',markersize=3,
                    label='Lambert Phase (median)')
-    ax5_right.fill_between(times_sep,low_lambert,high_lambert,color=c_iwa_wide,alpha=0.2)
+    ax5_right.fill_between(dates_sep,low_lambert,high_lambert,color=c_iwa_wide,alpha=0.2)
     ax5_right.set_ylim([0,1])
 
     # Combine legends
