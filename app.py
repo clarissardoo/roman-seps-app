@@ -439,12 +439,12 @@ HTML="""
 
   <div class="form-group">
     <label>Start date:</label>
-    <input type="text" name="start_date" value="{{start_date or '2026-06-01'}}" placeholder="2026-06-01">
+    <input type="text" name="start_date" value="{{start_date or '2027-01-01'}}" placeholder="2027-01-01">
   </div>
 
   <div class="form-group">
     <label>End date:</label>
-    <input type="text" name="end_date" value="{{end_date or '2031-06-01'}}" placeholder="2031-06-01">
+    <input type="text" name="end_date" value="{{end_date or '2027-06-01'}}" placeholder="2027-06-01">
   </div>
 
   <div class="form-group">
@@ -664,14 +664,14 @@ def index():
     # PLOT 1: 2D ORBIT (ra/dec)
     ax1=fig.add_subplot(gs[:,0])
     inc_display='unknown' if override_inc=='unknown' else f'{override_inc}°'
-    title_2d=f"{display_names[planet]}: Orbital Trajectory (i={inc_display}"
+    title_2d=f"{display_names[planet]}: Orbital Trajectory \n (i={inc_display}"
     if override_lan is not None:
         title_2d+=f", Ω={override_lan}°)"
     else:
         title_2d+=", Ω=random)"
-    ax1.set_title(title_2d,fontsize=14)
-    ax1.set_xlabel("RA Offset [mas]",fontsize=14)
-    ax1.set_ylabel("Dec Offset [mas]",fontsize=14)
+    ax1.set_title(title_2d,fontsize=18)
+    ax1.set_xlabel("RA Offset [mas]",fontsize=18)
+    ax1.set_ylabel("Dec Offset [mas]",fontsize=18)
 
     theta=np.linspace(0,2*np.pi,100)
     ax1.plot(IWA*np.cos(theta),IWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--',label='IWA/OWA (Narrow)')
@@ -690,7 +690,7 @@ def index():
              color=c_median,linewidth=3,alpha=0.9,zorder=10,label='Median orbit')
 
     # Add date markers at specific dates
-    marker_dates=['2027-01-01','2027-06-01','2028-06-01','2029-01-01']
+    marker_dates=['2027-01-01','2027-06-01']
     marker_times=Time(marker_dates)
 
     # Find indices in epochs_2d closest to marker dates
@@ -731,23 +731,23 @@ def index():
 
     ax1.set_xlim(ra_min-padding*ra_range,ra_max+padding*ra_range)
     ax1.set_ylim(dec_min-padding*dec_range,dec_max+padding*dec_range)
-
+    ax1.invert_xaxis()
     ax1.set_aspect('equal')
-    ax1.tick_params(axis='both',which='major',labelsize=12)
-    ax1.legend(loc='best',fontsize=10)
+    ax1.tick_params(axis='both',which='major',labelsize=14)
+    ax1.legend(loc='best',fontsize=12)
 
-    # PLOT 4: sky plane orbit (NO TEXT OVERLAYS)
+    # PLOT 4: sky plane orbit
     ax4=fig.add_subplot(gs[:,1])
     title_sky=f"{display_names[planet]}: Sky-Plane Orbit (i={inc_display})"
     if override_inc=="unknown":
-        title_sky+="\nNote: Near face-on view (i≈0.1°) - larger than projected separation above"
-    ax4.set_title(title_sky,fontsize=14)
+        title_sky+="\nNote: Near face-on view (i≈0.01°)\nlarger than projected separation above"
+    ax4.set_title(title_sky,fontsize=18)
 
     # Determine plot style based on inclination type
     if override_inc=="unknown":
         # Unknown inclination: use vertical lines (face-on view for orbit, i ≈ 1.5°)
-        ax4.set_xlabel("Plane of sky offset [mas]",fontsize=14)
-        ax4.set_ylabel("Offset in orbit plane [mas]",fontsize=14)
+        ax4.set_xlabel("Plane of sky offset [mas]",fontsize=18)
+        ax4.set_ylabel("Offset in orbit plane [mas]",fontsize=18)
 
         # Background shading (NO TEXT) - will be set after we determine limits
         # IWA/OWA vertical lines
@@ -758,8 +758,8 @@ def index():
 
     else:
         # Specific inclination: use circles
-        ax4.set_xlabel("Projected separation along line of nodes [mas]",fontsize=14)
-        ax4.set_ylabel("Projected separation perpendicular to line of nodes [mas]",fontsize=14)
+        ax4.set_xlabel("Projected separation along line of nodes [mas]",fontsize=18)
+        ax4.set_ylabel("Projected separation perpendicular to line of nodes [mas]",fontsize=18)
 
         # Background shading (NO TEXT) - will be set after we determine limits
         # IWA/OWA circles
@@ -824,8 +824,8 @@ def index():
     ax4.axhspan(ylims[0],0,alpha=0.05,color='red',zorder=0)
 
     ax4.set_aspect('equal')
-    ax4.tick_params(axis='both',which='major',labelsize=12)
-    ax4.legend(loc='best',fontsize=10)
+    ax4.tick_params(axis='both',which='major',labelsize=14)
+    ax4.legend(loc='best',fontsize=12)
 
     # Plot 2 - sep vs time
     ax2=fig.add_subplot(gs[0,2:4])
@@ -835,9 +835,9 @@ def index():
     sep_title=f"Separation vs Time (1σ Range: {min_sep_1sigma:.0f}-{max_sep_1sigma:.0f} mas)"
     if override_inc=="unknown":
         sep_title+="\nNote: Uses random cos(i) sampling for projected separation"
-    ax2.set_title(sep_title,fontsize=12)
-    ax2.set_ylabel("Separation [mas]",fontsize=12)
-    ax2.tick_params(axis='both',which='major',labelsize=10)
+    ax2.set_title(sep_title,fontsize=14)
+    ax2.set_ylabel("Separation [mas]",fontsize=14)
+    ax2.tick_params(axis='both',which='major',labelsize=12)
 
     ax2.plot(times_sep,med_sep,'-',color=c_median,linewidth=2,label='Median separation',marker='o',markersize=3)
     ax2.fill_between(times_sep,low_sep,high_sep,color=c_fill,alpha=0.5,label='1σ interval')
@@ -869,14 +869,22 @@ def index():
 
     ax2.set_ylim(y_min,y_max)
 
-    ax2.legend(loc='best',fontsize=9)
+    ax2.legend(loc='best',fontsize=11)
 
     # Plot 3 - vis fraction
     ax3=fig.add_subplot(gs[1,2:4],sharex=ax2)
-    ax3.set_title("Visibility Fraction",fontsize=12)
-    ax3.set_xlabel("Year",fontsize=12)
-    ax3.set_ylabel("Visible [%]",fontsize=12)
-    ax3.tick_params(axis='both',which='major',labelsize=10)
+
+    # Calculate min/max visibility for the window
+    min_vis_narrow=np.min(visible_frac_narrow)
+    max_vis_narrow=np.max(visible_frac_narrow)
+    min_vis_wide=np.min(visible_frac_wide)
+    max_vis_wide=np.max(visible_frac_wide)
+
+    vis_title=f"Visibility Fraction\nNarrow: {min_vis_narrow:.1f}%-{max_vis_narrow:.1f}% | Wide: {min_vis_wide:.1f}%-{max_vis_wide:.1f}%"
+    ax3.set_title(vis_title,fontsize=14)
+    ax3.set_xlabel("Year",fontsize=14)
+    ax3.set_ylabel("Visible [%]",fontsize=14)
+    ax3.tick_params(axis='both',which='major',labelsize=12)
 
     ax3.plot(times_sep,visible_frac_narrow,color=c_iwa_narrow,linewidth=2,marker='o',markersize=3,
              label='Narrow (155-436 mas)')
@@ -886,14 +894,14 @@ def index():
     ax3.fill_between(times_sep,0,visible_frac_wide,color=c_iwa_wide,alpha=0.2)
 
     ax3.set_ylim([0,100])
-    ax3.legend(loc='best',fontsize=9)
+    ax3.legend(loc='best',fontsize=11)
 
     # Plot 5 - phase angle
     ax5=fig.add_subplot(gs[2,2:4],sharex=ax2)
-    ax5.set_title("Phase Angle & Lambert Phase",fontsize=12)
-    ax5.set_xlabel("Year",fontsize=12)
-    ax5.set_ylabel("Phase Angle [°]",fontsize=12,color=c_median)
-    ax5.tick_params(axis='both',which='major',labelsize=10)
+    ax5.set_title("Phase Angle & Lambert Phase",fontsize=14)
+    ax5.set_xlabel("Year",fontsize=14)
+    ax5.set_ylabel("Phase Angle [°]",fontsize=14,color=c_median)
+    ax5.tick_params(axis='both',which='major',labelsize=12)
     ax5.tick_params(axis='y',labelcolor=c_median)
 
     # Phase angle on left y-axis
@@ -903,8 +911,8 @@ def index():
 
     # Lambert phase on right y-axis
     ax5_right=ax5.twinx()
-    ax5_right.set_ylabel("Lambert Phase Function",fontsize=12,color=c_iwa_wide)
-    ax5_right.tick_params(axis='y',labelcolor=c_iwa_wide)
+    ax5_right.set_ylabel("Lambert Phase Function",fontsize=14,color=c_iwa_wide)
+    ax5_right.tick_params(axis='y',labelcolor=c_iwa_wide,labelsize=12)
     ax5_right.plot(times_sep,med_lambert,color=c_iwa_wide,linewidth=2,marker='s',markersize=3,
                    label='Lambert Phase (median)')
     ax5_right.fill_between(times_sep,low_lambert,high_lambert,color=c_iwa_wide,alpha=0.2)
@@ -913,9 +921,9 @@ def index():
     # Combine legends
     lines1,labels1=ax5.get_legend_handles_labels()
     lines2,labels2=ax5_right.get_legend_handles_labels()
-    ax5.legend(lines1+lines2,labels1+labels2,loc='best',fontsize=9)
+    ax5.legend(lines1+lines2,labels1+labels2,loc='best',fontsize=11)
 
-    plt.suptitle(f"{display_names[planet]}: {start_date_str} → {end_date_str}",fontsize=16,y=0.98)
+    plt.suptitle(f"{display_names[planet]}: {start_date_str} → {end_date_str}",fontsize=18,y=0.98)
     plt.tight_layout()
 
     # Convert to base64
