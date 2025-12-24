@@ -14,6 +14,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.dates import DateFormatter
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -249,7 +250,7 @@ def compute_sep_skyplane(
             Msini(semiamp,per_day,m_st,ecc,Msini_units='Earth')
             *(u.M_earth/u.M_sun).to('')
     )
-    m_pl=msini  # At i=90°, sin(i)=1
+    m_pl=msini  # At i=90 sin(i)=1
     mtot=m_st+m_pl
     sma=(period_yr**2*mtot)**(1/3)
 
@@ -311,113 +312,163 @@ def compute_sep_skyplane(
     seps=np.sqrt(X_mas**2+Y_mas**2)
 
     return seps,X_mas,Y_mas
+
+
 base_path=Path("orbit_fits")
 
-# Display names for prettier UI
+# Display names for prettier UI (now includes planet letters)
 display_names={
-    "47_UMa":"47 UMa c",
-    "55_Cnc":"55 Cancri d",
-    "eps_Eri":"Eps Eri b",
-    "HD_87883":"HD 87883 b",
-    "HD_114783":"HD 114783 c",
-    "HD_134987":"HD 134987 c",
-    "HD_154345":"HD 154345 b",
-    "HD_160691":"HD 160691 e",
-    "HD_190360":"HD 190360 b",
-    "HD_217107":"HD 217107 c",
-    "pi_Men":"Pi Men b",
-    "ups_And":"Ups And d",
-    "HD_192310":"HD 192310 c",
+    "47_UMa_c":"47 UMa c",
+    "47_UMa_b":"47 UMa b",
+    "47_UMa_d":"47 UMa d",
+    "55_Cnc_d":"55 Cancri d",
+    "eps_Eri_b":"Eps Eri b",
+    "HD_87883_b":"HD 87883 b",
+    "HD_114783_c":"HD 114783 c",
+    "HD_134987_c":"HD 134987 c",
+    "HD_154345_b":"HD 154345 b",
+    "HD_160691_c":"HD 160691 c",
+    "HD_190360_b":"HD 190360 b",
+    "HD_217107_c":"HD 217107 c",
+    "pi_Men_b":"Pi Men b",
+    "ups_And_d":"Ups And d",
+    "HD_192310_c":"HD 192310 c",
 }
 
 orbit_params={
-    "47_UMa":{
+    "47_UMa_c":{
+        "star":"47_UMa",'pl_letter':'c',
         "basis":"per tc secosw sesinw k",
         "m0":1.0051917028549999,"m0_err":0.0468882076437500,
-        "plx":72.452800,"plx_err":0.150701,
+        "plx":72.0070,"plx_err":0.0974,
         "n_planets":3,"pl_num":2,"g_mag":4.866588,
     },
-    "55_Cnc":{
+    "47_UMa_b":{
+        "star":"47_UMa",'pl_letter':'b',
+        "basis":"per tc secosw sesinw k",
+        "m0":1.0051917028549999,"m0_err":0.0468882076437500,
+        "plx":72.0070,"plx_err":0.0974,
+        "n_planets":3,"pl_num":1,"g_mag":4.866588,
+    },
+    "47_UMa_d":{
+        "star":"47_UMa",'pl_letter':'d',
+        "basis":"per tc secosw sesinw k",
+        "m0":1.0051917028549999,"m0_err":0.0468882076437500,
+        "plx":72.0070,"plx_err":0.0974,
+        "n_planets":3,"pl_num":3,"g_mag":4.866588,
+    },
+    "55_Cnc_d":{
+        'star':"55_Cnc",'pl_letter':'d',
         "basis":"per tc secosw sesinw k",
         "m0":0.905,"m0_err":0.015,
-        "plx":79.4274000,"plx_err":0.0776646,
+        "plx":79.4482,"plx_err":0.0429,
         "n_planets":5,"pl_num":3,"g_mag":5.732681,
     },
-    "eps_Eri":{
+    "eps_Eri_b":{
+        'star':'eps_Eri','pl_letter':'b',
         "basis":"per tc secosw sesinw k",
         "m0":0.82,"m0_err":0.02,
-        "plx":312.219000,"plx_err":0.467348,
+        "plx":310.5773,"plx_err":0.1355,
         "n_planets":1,"pl_num":1,"g_mag":3.465752,
+        "inc_mean":78.810,"inc_sig":29.340,
     },
-    "HD_87883":{
+    "HD_87883_b":{
+        'star':'HD_87883','pl_letter':'b',
         "basis":"per tc secosw sesinw k",
         "m0":0.810,"m0_err":0.091,
-        "plx":54.6421000,"plx_err":0.0369056,
+        "plx":54.6678,"plx_err":0.0295,
         "n_planets":1,"pl_num":1,"g_mag":7.286231,
+        "inc_mean":25.45,"inc_sig":1.61,
     },
-    "HD_114783":{
+    "HD_114783_c":{
+        'star':'HD_114783','pl_letter':'c',
         "basis":"per tc secosw sesinw k",
         "m0":0.90,"m0_err":0.04,
-        "plx":47.4482000,"plx_err":0.0637202,
+        "plx":47.5529,"plx_err":0.0291,
         "n_planets":2,"pl_num":2,"g_mag":7.330857,
+        "inc_mean":159,"inc_sig":6,
     },
-    "HD_134987":{
+    "HD_134987_c":{
+        'star':'HD_134987','pl_letter':'c',
         "basis":"per tc secosw sesinw k",
         "m0":1.0926444945650000,"m0_err":0.0474835459017250,
-        "plx":38.1678000,"plx_err":0.0746519,
+        "plx":38.1946,"plx_err":0.0370,
         "n_planets":2,"pl_num":2,"g_mag":6.302472,
     },
-    "HD_154345":{
+    "HD_154345_b":{
+        'star':'HD_154345','pl_letter':'b',
         "basis":"per tc secosw sesinw k",
         "m0":0.88,"m0_err":0.09,
-        "plx":54.6636000,"plx_err":0.0212277,
+        "plx":54.7359,"plx_err":0.0176,
         "n_planets":1,"pl_num":1,"g_mag":6.583667,
+        "inc_mean":69,"inc_sig":13,
+        'pl_letter':'b',
     },
-    "HD_160691":{
+    "HD_160691_c":{
+        'star':'HD_160691','pl_letter':'c',
         "basis":"per tc secosw sesinw k",
         "m0":1.13,"m0_err":0.02,
         "plx":64.082,"plx_err":0.120162,
         "n_planets":4,"pl_num":4,"g_mag":4.942752,
     },
-    "HD_190360":{
+    "HD_190360_b":{
+        'star':'HD_190360','pl_letter':'b',
         "basis":"per tc secosw sesinw k",
         "m0":1.0,"m0_err":0.1,
-        "plx":62.4443000,"plx_err":0.0616881,
-        "n_planets":2,"pl_num":1,"g_mag":5.552787
+        "plx":62.4865,"plx_err":0.0354,
+        "n_planets":2,"pl_num":1,"g_mag":5.552787,
+        "inc_mean":80.2,"inc_sig":23.2,
     },
-    "HD_217107":{
+    "HD_217107_c":{
+        'star':'HD_217107','pl_letter':'c',
         "basis":"per tc secosw sesinw k",
         "m0":1.05963082882500,"m0_err":0.04470613802572,
-        "plx":49.8170000,"plx_err":0.0573616,
-        "n_planets":2,"pl_num":2,"g_mag":5.996743
+        "plx":49.7846,"plx_err":0.0263,
+        "n_planets":2,"pl_num":2,"g_mag":5.996743,
+        "inc_mean":89.3,"inc_sig":9.0,
     },
-    "pi_Men":{
+    "pi_Men_b":{
+        'star':'pi_Men','pl_letter':'b',
         "basis":"per tc secosw sesinw k",
         "m0":1.10,"m0_err":0.14,
-        "plx":54.705200,"plx_err":0.067131,
-        "n_planets":1,"pl_num":1,"g_mag":5.511580
+        "plx":54.6825,"plx_err":0.0354,
+        "n_planets":1,"pl_num":1,"g_mag":5.511580,
+        "inc_mean":54.436,"inc_sig":5.945,
     },
-    "ups_And":{
+    "ups_And_d":{
+        'star':'ups_And','pl_letter':'d',
         "basis":"per tc secosw sesinw k",
         "m0":1.29419667430000,"m0_err":0.04122482369025,
-        "plx":74.571100,"plx_err":0.349118,
-        "n_planets":3,"pl_num":3,"g_mag":3.966133
+        "plx":74.1940,"plx_err":0.2083,
+        "n_planets":3,"pl_num":3,"g_mag":3.966133,
+        "inc_mean":23.758,"inc_sig":1.316,
     },
-    "HD_192310":{
+    "HD_192310_c":{
+        'star':'HD_192310','pl_letter':'c',
         "basis":"per tc secosw sesinw k",
         "m0":0.84432448757250,"m0_err":0.02820926681885,
-        "plx":113.648000,"plx_err":0.118606,
-        "n_planets":2,"pl_num":2,"g_mag":5.481350
+        "plx":113.4872,"plx_err":0.0516,
+        "n_planets":2,"pl_num":2,"g_mag":5.481350,
     },
 }
 
+# Load posteriors - files are organized by star name, not planet name
 posterior_cache={}
-for name in orbit_params.keys():
-    files=list((base_path/name).glob("*.csv.bz2"))
+for planet_key in orbit_params.keys():
+    params=orbit_params[planet_key]
+    star_name=params['star']
+
+    # Look for posterior files in orbit_fits/{star_name}/ directory
+    star_dir=base_path/star_name
+    files=list(star_dir.glob("*.csv.bz2"))
+
     if files:
-        posterior_cache[name]=pd.read_csv(files[0])
+        if len(files)>1:
+            print(f"Warning: Multiple posterior files found for {star_name}, using first one")
+        posterior_cache[planet_key]=pd.read_csv(files[0])
     else:
-        posterior_cache[name]=None
+        print(f"Warning: No posterior data found for {planet_key} in {star_dir}")
+        posterior_cache[planet_key]=None
 
 # Flask App
 app=Flask(__name__)
@@ -460,7 +511,7 @@ HTML="""
 
   <div class="form-group">
     <label>End date:</label>
-    <input type="text" name="end_date" value="{{end_date or '2027-06-01'}}" placeholder="2027-06-01">
+    <input type="text" name="end_date" value="{{end_date or '2028-06-01'}}" placeholder="2028-06-01">
   </div>
 
   <div class="form-group">
@@ -600,7 +651,7 @@ def index():
     # For "unknown": RA/Dec uses random cos(i), sky-plane uses face-on
     if override_inc=="unknown":
         override_inc_for_compute=None  # Random cos(i) for RA/Dec and visibility
-        override_inc_for_skyplane=0.01# Near face-on for sky-plane plot only
+        override_inc_for_skyplane=0.01  # Near face-on for sky-plane plot only
     else:
         # Numerical value - use same for both
         override_inc_for_compute=override_inc
@@ -698,17 +749,17 @@ def index():
     ax1.set_ylabel("Dec Offset [mas]",fontsize=18)
 
     theta=np.linspace(0,2*np.pi,100)
-    ax1.plot(IWA*np.cos(theta),IWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--',label='IWA/OWA (Narrow)')
-    ax1.plot(OWA*np.cos(theta),OWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--')
 
-    # Check if orbit intersects wide FOV ring and plot if it does
-    max_sep_orbit=np.max(seps_2d)
-    min_sep_orbit=np.min(seps_2d)
-
-    # Plot wide FOV rings if orbit passes through that region
-    if max_sep_orbit>=IWAw and min_sep_orbit<=OWAw:
+    if planet in ["eps_Eri_b","47_UMa_d"]:
+        # For large-separation planets, show wide FOV rings
         ax1.plot(IWAw*np.cos(theta),IWAw*np.sin(theta),color=c_iwa_wide,lw=4,linestyle='--',label='IWA/OWA (Wide)')
         ax1.plot(OWAw*np.cos(theta),OWAw*np.sin(theta),color=c_iwa_wide,lw=4,linestyle='--')
+        ax1.plot(IWA*np.cos(theta),IWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--',label='IWA/OWA (Narrow)')
+        ax1.plot(OWA*np.cos(theta),OWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--')
+    else:
+        # For other planets, show narrow FOV rings
+        ax1.plot(IWA*np.cos(theta),IWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--',label='IWA/OWA (Narrow)')
+        ax1.plot(OWA*np.cos(theta),OWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--')
 
     n_samples=min(100,raoff_2d.shape[1])
     sample_indices=np.random.choice(raoff_2d.shape[1],n_samples,replace=False)
@@ -723,7 +774,7 @@ def index():
              color=c_median,linewidth=3,alpha=0.9,zorder=10,label='Median orbit')
 
     # Add date markers at specific dates
-    marker_dates=['2027-01-01','2027-06-01']
+    marker_dates=['2027-01-01','2027-06-01', '2028-01-01', '2028-06-01']
     marker_times=Time(marker_dates)
 
     # Find indices in epochs_2d closest to marker dates
@@ -752,18 +803,18 @@ def index():
 
     ax1.plot(0,0,'*',color=c_star,markersize=20,label='Star',zorder=15)
 
-    # Set axis limits based on actual data with some padding
-    # Get the range of the orbits
-    ra_min,ra_max=np.min(raoff_2d),np.max(raoff_2d)
-    dec_min,dec_max=np.min(deoff_2d),np.max(deoff_2d)
+    # Set axis limits based on FOV ranges (stable, not data-dependent)
+    padding=0.05
 
-    # Add 30% padding
-    ra_range=ra_max-ra_min
-    dec_range=dec_max-dec_min
-    padding=0.3
+    if planet in ["eps_Eri_b","47_UMa_d"]:
+        # For large-separation planets, set limits based on wide FOV
+        limit=OWAw*(1+padding)
+    else:
+        # For other planets, set limits based on narrow FOV
+        limit=OWA*(1+padding)
 
-    ax1.set_xlim(ra_min-padding*ra_range,ra_max+padding*ra_range)
-    ax1.set_ylim(dec_min-padding*dec_range,dec_max+padding*dec_range)
+    ax1.set_xlim(-limit,limit)
+    ax1.set_ylim(-limit,limit)
     ax1.invert_xaxis()
     ax1.set_aspect('equal')
     ax1.tick_params(axis='both',which='major',labelsize=14)
@@ -788,6 +839,10 @@ def index():
         ax4.axvline(-IWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
         ax4.axvline(OWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
         ax4.axvline(-OWA,color=c_iwa_narrow,linestyle='--',linewidth=4)
+        ax4.axvline(IWAw,color=c_iwa_wide,linestyle='--',linewidth=4,label='IWA/OWA (Wide)')
+        ax4.axvline(-IWAw,color=c_iwa_wide,linestyle='--',linewidth=4)
+        ax4.axvline(OWAw,color=c_iwa_wide,linestyle='--',linewidth=4)
+        ax4.axvline(-OWAw,color=c_iwa_wide,linestyle='--',linewidth=4)
 
     else:
         # Specific inclination: use circles
@@ -799,6 +854,8 @@ def index():
         theta=np.linspace(0,2*np.pi,100)
         ax4.plot(IWA*np.cos(theta),IWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--',label='IWA/OWA (Narrow)')
         ax4.plot(OWA*np.cos(theta),OWA*np.sin(theta),color=c_iwa_narrow,lw=4,linestyle='--')
+        ax4.plot(IWAw*np.cos(theta),IWAw*np.sin(theta),color=c_iwa_wide,lw=4,linestyle='--',label='IWA/OWA (Wide)')
+        ax4.plot(OWAw*np.cos(theta),OWAw*np.sin(theta),color=c_iwa_wide,lw=4,linestyle='--')
 
     # Plot sample orbits
     n_samples_sky=min(100,raoff_2d_sky.shape[1])
@@ -892,21 +949,21 @@ def index():
     ax2.axhline(y=IWA,color=c_iwa_narrow,linestyle='--',linewidth=3,label='IWA/OWA (Narrow)')
     ax2.axhline(y=OWA,color=c_iwa_narrow,linestyle='--',linewidth=3)
 
-    # Only plot wide IWA/OWA for Eps Eri
-    if planet=="eps_Eri":
+    # Plot wide IWA/OWA for planets with large separations (Eps Eri b, 47 UMa d)
+    if planet in ["eps_Eri_b","47_UMa_d"]:
         ax2.axhline(y=IWAw,color=c_iwa_wide,linestyle='--',linewidth=3,label='IWA/OWA (Wide)')
         ax2.axhline(y=OWAw,color=c_iwa_wide,linestyle='--',linewidth=3)
 
     # Set y-axis limits based on data with some padding
     y_min=max(0,np.min(low_sep)*0.8)  # 20% below min, but not below 0
-    y_max=np.max(high_sep)*1.2  # 20% above max
 
-    # For Eps Eri, ensure OWA wide is visible
-    if planet=="eps_Eri":
-        y_max=max(y_max,OWAw*1.1)
+    # Determine appropriate y_max based on which FOV rings are relevant
+    if planet in ["eps_Eri_b","47_UMa_d"]:
+        # For planets with large separations, always show the wide FOV range
+        y_max=OWAw*1.15  # 15% padding above OWA wide
     else:
-        # For others, ensure OWA narrow is visible
-        y_max=max(y_max,OWA*1.1)
+        # For others, show narrow FOV range
+        y_max=OWA*1.15  # 15% padding above OWA narrow
 
     ax2.set_ylim(y_min,y_max)
 
