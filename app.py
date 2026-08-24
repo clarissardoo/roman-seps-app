@@ -949,9 +949,17 @@ def index():
     ax1.plot(raoff_2d[:,median_idx_radec],deoff_2d[:,median_idx_radec],'-',
              color=c_median,linewidth=3,alpha=0.9,zorder=10,label='Median orbit')
 
-    # Add date markers at specific dates
-    marker_dates=['2027-01-01','2027-06-01','2028-01-01','2028-06-01']
-    marker_times=Time(marker_dates)
+    # Add January 1 and June 1 date markers throughout the selected observation
+    # window so the mid-year annotation is consistently shown as 06/01.
+    marker_dates=[]
+    marker_start=pd.Timestamp(t_start.to_datetime())
+    marker_end=pd.Timestamp(t_end.to_datetime())
+    for marker_year in range(marker_start.year,marker_end.year+1):
+        for marker_month in (1,6):
+            marker_date=pd.Timestamp(year=marker_year,month=marker_month,day=1)
+            if marker_start<=marker_date<=marker_end:
+                marker_dates.append(marker_date.strftime('%Y-%m-%d'))
+    marker_times=Time(marker_dates) if marker_dates else []
 
     # Find indices in epochs_2d closest to marker dates
     for marker_time,marker_date_str in zip(marker_times,marker_dates):
